@@ -1,0 +1,27 @@
+# Web Scraping & API
+requests==2.31.0
+beautifulsoup4==4.12.3
+tweepy==4.14.0
+praw==7.8.1
+googlenews==1.6.15
+
+# Data Processing
+pandas==2.1.4
+numpy==1.24.3
+
+# NLP & ML
+transformers==4.36.2
+torch==2.1.2
+textblob==0.17.1
+scikit-learn==1.3.2
+
+# Database
+sqlalchemy==2.0.25
+psycopg2-binary==2.9.9
+
+# Environment & Utils
+python-dotenv==1.0.0
+python-dateutil==2.8.2
+
+# Rate Limiting
+ratelimit==2.2.1
