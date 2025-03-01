@@ -45,7 +45,10 @@ def get_data():
             return jsonify({'error': 'No data available'})
         
         df = pd.DataFrame(data)
-        df['date_of_article'] = pd.to_datetime(df['date_of_article'])
+        
+        # Convert date strings to datetime objects
+        df['date_of_article'] = pd.to_datetime(df['date_of_article'], format='mixed')
+        df['date_collected'] = pd.to_datetime(df['date_collected'], format='mixed')
         
         # Filter by article date
         cutoff_date = datetime.now() - timedelta(days=days)
@@ -56,10 +59,7 @@ def get_data():
         sentiment_dist = df['sentiment'].value_counts().to_dict()
         source_dist = df['source'].value_counts().to_dict()
         
-        logger.info(f"Sentiment distribution for {days} days: {sentiment_dist}")
-        logger.info(f"Source distribution for {days} days: {source_dist}")
-        
-        # Use date_of_article for timeline
+        # Group by date for timeline
         df['date'] = df['date_of_article'].dt.date
         daily_sentiments = df.groupby(['date', 'sentiment']).size().unstack(fill_value=0)
         daily_sentiments = daily_sentiments.sort_index()
@@ -76,8 +76,8 @@ def get_data():
                 'neutral': daily_sentiments.get('neutral', pd.Series([0] * len(daily_sentiments))).tolist()
             },
             'date_range': {
-                'start': df['date_of_article'].min().isoformat() if not df.empty else None,
-                'end': df['date_of_article'].max().isoformat() if not df.empty else None
+                'start': df['date_of_article'].min().strftime('%Y-%m-%d') if not df.empty else None,
+                'end': df['date_of_article'].max().strftime('%Y-%m-%d') if not df.empty else None
             }
         }
         

@@ -60,6 +60,9 @@ class DatabaseManager:
             
             # Parse article date - keep original timestamp if available
             article_date = None
+            #
+            # 
+            # print(f"Article date is XD: {article.get('date')}")
             if article.get('date'):
                 try:
                     # Remove any timezone info to match database datetime
@@ -79,7 +82,9 @@ class DatabaseManager:
                     logger.warning(f"Could not parse date '{article.get('date')}': {str(e)}")
                     article_date = datetime.now()
             else:
+                #print(f"No date found for article: {url}")
                 article_date = datetime.now()
+                #print("\n\n\n")
             
             logger.debug(f"Using article date: {article_date} for URL: {url}")
             
@@ -135,8 +140,8 @@ class DatabaseManager:
                     'source': article.source,
                     'sentiment': article.sentiment,
                     'confidence': article.confidence,
-                    'date_collected': article.date_collected.isoformat(),
-                    'date_of_article': article.date_of_article.isoformat() if article.date_of_article else None
+                    'date_collected': article.date_collected.strftime('%Y-%m-%d %H:%M:%S'),
+                    'date_of_article': article.date_of_article.strftime('%Y-%m-%d %H:%M:%S') if article.date_of_article else None
                 })
             
             session.close()

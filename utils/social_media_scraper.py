@@ -8,6 +8,8 @@ import os
 import time
 import logging
 from newsapi import NewsApiClient
+import json
+import random
 
 logger = logging.getLogger(__name__)
 
@@ -82,10 +84,10 @@ class RedditScraper:
                 
                 # Get posts from different time periods and sorting methods
                 post_queries = [
-                    subreddit.hot(limit=1),
-                    subreddit.new(limit=1),
-                    subreddit.top(time_filter='month', limit=1),
-                    subreddit.top(time_filter='week', limit=1)
+                    subreddit.hot(limit=Config.REDDIT_POST_LIMIT),
+                    subreddit.new(limit=Config.REDDIT_POST_LIMIT),
+                    subreddit.top(time_filter='month', limit=Config.REDDIT_POST_LIMIT),
+                    subreddit.top(time_filter='week', limit=Config.REDDIT_POST_LIMIT)
                 ]
                 
                 for query in post_queries:
@@ -110,7 +112,7 @@ class RedditScraper:
                                 'title': post.title,
                                 'content': post.selftext,
                                 'url': f"https://reddit.com{post.permalink}",
-                                'date': post_date.isoformat(),  # Store original post date
+                                'date': post_date.isoformat(),
                                 'subreddit': subreddit_name,
                                 'source': 'reddit'
                             })
@@ -127,62 +129,117 @@ class RedditScraper:
         
         return posts
 
-
-    
+   
 class GoogleNewsScraper:
     def __init__(self):
-        self.googlenews = GoogleNews(period=Config.GOOGLE_NEWS_PERIOD)
+        self.googlenews = GoogleNews()
         self.googlenews.set_lang('en')
         self.googlenews.set_encode('utf-8')
-        self.delay = 3  # Delay between requests in seconds
+        self.time_periods = Config.GOOGLE_NEWS_PERIODS
+        self.period_days = {
+            '7d': 7,
+            '30d': 30,
+        }
+        self.max_pages = Config.GOOGLE_NEWS_PAGES  # Number of pages to fetch
+
+    def parse_relative_date(self, date_str: str, period_days: int) -> datetime:
+        """Convert relative date string to datetime object."""
+        try:
+            # Handle relative dates like "1 day ago", "2 days ago", etc.
+            if 'day' in date_str:
+                days = int(date_str.split()[0])
+                return datetime.now() - timedelta(days=days)
+            
+            # Handle relative dates like "1 hour ago", "2 hours ago", etc.
+            elif 'hour' in date_str:
+                hours = int(date_str.split()[0])
+                return datetime.now() - timedelta(hours=hours)
+            
+            # Handle relative dates like "1 week ago", "2 weeks ago", etc.
+            elif 'week' in date_str:
+                weeks = int(date_str.split()[0])
+                return datetime.now() - timedelta(weeks=weeks)
+            
+            # Handle relative dates like "1 month ago", "2 months ago", etc.
+            elif 'month' in date_str:
+                months = int(date_str.split()[0])
+                return datetime.now() - timedelta(days=months * 30)
+            
+            else:
+                # If can't parse, estimate based on the period
+                logger.warning(f"Unhandled date format: {date_str}, estimating based on period")
+                # Use a random point within the period to distribute articles
+                random_days = random.randint(1, period_days)
+                return datetime.now() - timedelta(days=random_days)
+                
+        except Exception as e:
+            logger.error(f"Error parsing date '{date_str}': {str(e)}")
+            return datetime.now() - timedelta(days=period_days // 2)
 
     def scrape_news(self) -> List[Dict]:
         """Scrape real estate related news from Google News."""
         articles = []
         
         try:
-            # Search with different queries and time periods
-            for query_index, query in enumerate(Config.GOOGLE_NEWS_QUERIES):
-                try:
-                    # Clear previous results
-                    self.googlenews.clear()
-                    
-                    # Add delay between queries
-                    if query_index > 0:
-                        print(f"Waiting {self.delay} seconds before next query...")
-                        time.sleep(self.delay)
-                    
-                    print(f"Searching for: {query}")
+            # Iterate through time periods
+            for period_key, period in self.time_periods.items():
+                print(f"\nCollecting articles for period: {period_key} ({self.period_days[period_key]} days)")
+                
+                # Set the period for Google News
+                self.googlenews.set_period(period)
+                
+                # Search with different queries
+                for query in Config.GOOGLE_NEWS_QUERIES:
                     try:
+                        # Clear previous results
+                        self.googlenews.clear()
+                        
+                        print(f"Searching for: {query}")
                         self.googlenews.search(query)
+                        
+                        # Get multiple pages of results
+                        for page in range(1, self.max_pages + 1):
+                            try:
+                                print(f"Fetching page {page}...")
+                                self.googlenews.get_page(page)
+                                results = self.googlenews.results()
+                                
+                                # Process results
+                                for result in results:
+                                    # Check if article already exists in our list
+                                    if not any(a['url'] == result.get('link') for a in articles):
+                                        # Parse the relative date
+                                        date_str = result.get('date', '')
+                                        article_date = self.parse_relative_date(date_str, self.period_days[period_key])
+                                        
+                                        articles.append({
+                                            'title': result.get('title'),
+                                            'content': result.get('desc'),
+                                            'date': article_date,
+                                            'source': result.get('site'),
+                                            'url': result.get('link'),
+                                            'period': period_key
+                                        })
+                                
+                                print(f"Found {len(results)} articles on page {page}")
+                                
+                                # Add a small delay between pages
+                                time.sleep(2)
+                                
+                            except Exception as e:
+                                print(f"Error fetching page {page}: {str(e)}")
+                                continue
+                        
+                        print(f"Total articles found for query '{query}' in period {period_key}: {len(articles)}")
+                        
                     except Exception as e:
-                        print(f"Error searching for {query}\n Error: {str(e)}")
+                        print(f"Error processing query '{query}' for period {period_key}: {str(e)}")
                         continue
-                    
-                    # Get first page of results
-                    results = self.googlenews.results()
-                    
-                    # Process results
-                    for result in results:
-                        # Check if article is already in the list
-                        if not any(a['url'] == result.get('link') for a in articles):
-                            articles.append({
-                                'title': result.get('title'),
-                                'content': result.get('desc'),
-                                'date': result.get('datetime'),
-                                'source': result.get('site'),
-                                'url': result.get('link')
-                            })
-                    
-                    print(f"Found {len(results)} articles for query: {query}")
-                    
-                except Exception as e:
-                    print(f"Error processing query '{query}': {str(e)}")
-                    # Continue with next query after a longer delay
-                    time.sleep(self.delay * 2)
-                    continue
             
-            print(f"Successfully scraped {len(articles)} total news articles")
+            print(f"\nSuccessfully scraped {len(articles)} total news articles")
+            
+            # Sort articles by date
+            articles.sort(key=lambda x: x['date'], reverse=True)
             
         except Exception as e:
             print(f"Error scraping Google News: {str(e)}")
@@ -220,14 +277,15 @@ class NewsAPIScraper:
                             to=end_date.strftime('%Y-%m-%d'),
                             sort_by='relevancy'
                         )
-                        
+                        #print(json.dumps(response, indent=2))
                         if response['status'] == 'ok':
                             for article in response['articles']:
+                                #print(f"Article was created at: {article.get('publishedAt')}")
                                 if not any(a['url'] == article['url'] for a in articles):
                                     articles.append({
                                         'title': article.get('title'),
                                         'content': article.get('description'),
-                                        'date': article.get('publishedAt'),  # Article's publication date
+                                        'date': article.get('publishedAt'),
                                         'source': article.get('source', {}).get('name'),
                                         'url': article.get('url'),
                                         'author': article.get('author')
@@ -250,7 +308,10 @@ class NewsAPIScraper:
             
         except Exception as e:
             print(f"Error scraping NewsAPI: {str(e)}")
-        
+        # Print dates of all articles
+        # print("\nDates of collected articles:")
+        # for article in articles:
+        #     print(f"Date: {article.get('date')}")
         return articles
 
 
@@ -266,11 +327,11 @@ class SocialMediaAggregator:
 
         # Get NewsAPI data
         newsapi_data = self.newsapi_scraper.scrape_news()
-        print(f"Successfully scraped {len(newsapi_data)} NewsAPI articles")
+        #print(f"Successfully scraped {len(newsapi_data)} NewsAPI articles")
 
         # Get Google News data
-        #googleNews_data = self.google_scraper.scrape_news()
-        #print(f"Successfully scraped {len(googleNews_data)} Google News articles")
+        googleNews_data = self.google_scraper.scrape_news()
+        print(f"Successfully scraped {len(googleNews_data)} Google News articles")
 
         # Get Reddit data
         reddit_data = self.reddit_scraper.scrape_subreddits()
@@ -278,11 +339,17 @@ class SocialMediaAggregator:
 
         all_data = {
             'reddit': reddit_data,
-            #'google_news': googleNews_data,
+            'google_news': googleNews_data,
             'newsapi': newsapi_data
         }
-        
+        # Print dates for articles from each source
+        # for source, items in all_data.items():
+        #     print(f"\nDates for {source} articles:")
+        #     for item in items:
+        #         print(f"Date: {item.get('date')}")
+
         total_items = sum(len(items) for items in all_data.values())
+        
         print(f"Total items collected: {total_items}")
         
         return all_data

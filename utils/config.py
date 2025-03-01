@@ -24,8 +24,15 @@ class Config:
     NEWS_API_QUERIES = [
         'australian real estate',
         'australia housing market',
-        #'australian property',
-        #'australia real estate investment'
+        'australian property',
+        'australia real estate investment',
+        'australian property market',
+        'australian property prices',
+        'australian property news',
+        'australian property market news',
+        'australian property prices news',
+        'australian property news',
+        'australian property market news',
     ]
     NEWS_API_SOURCES = 'au'  # Australian news sources
     NEWS_API_LANGUAGE = 'en'
@@ -51,15 +58,7 @@ class Config:
     SENTIMENT_POSITIVE_THRESHOLD = 0.6
     SENTIMENT_NEGATIVE_THRESHOLD = 0.4
     
-    # Twitter/X Configuration
-    TWITTER_KEYWORDS = [
-        'australian real estate',
-        'australia property market',
-        'australian housing',
-        'property prices australia',
-        'real estate australia'
-    ]
-    TWITTER_MAX_RESULTS = 100
+
     
     # Reddit Configuration
     REDDIT_SUBREDDITS = [
@@ -67,24 +66,29 @@ class Config:
         'AusFinance',
         'AusRealEstate',
         'AusInvest',
-        #'PropertyInvesting',
-        #'AusPropertyInvesting',
-        #'AusPropertyChat',
+        'PropertyInvesting',
+        'AusPropertyInvesting',
+        'AusPropertyChat',
         
     ]
-    REDDIT_POST_LIMIT = 200  # Increased from 100
+    REDDIT_POST_LIMIT = 250
     
     # Google News Configuration
     GOOGLE_NEWS_QUERIES = [
         'australian real estate',
         'australia housing market',
-        'australian property prices',
+        'australian property',
         'australia real estate investment',
-        'australian mortgage rates',
-        'australia property market'
+        'australian property market',
+        'australian property prices'
     ]
-    GOOGLE_NEWS_PERIOD = '7d'  
-    GOOGLE_NEWS_PAGES = 1 
+    
+    GOOGLE_NEWS_PERIODS = {
+        '7d': '7d',
+        '30d': '1m',   
+    }
+    
+    GOOGLE_NEWS_PAGES = 3  # Will fetch up to 30 articles per query/period
     
     # Selenium Configuration
     CHROME_DRIVER_PATH = os.getenv('CHROME_DRIVER_PATH', '/usr/local/bin/chromedriver') 

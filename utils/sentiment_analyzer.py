@@ -19,7 +19,7 @@ class TransformerSentimentAnalyzer:
         self.labels = ['negative', 'neutral', 'positive']
         
         # Confidence threshold for sentiment classification
-        self.confidence_threshold = 0.7
+        self.confidence_threshold = 0.8
 
     def analyze_text(self, text: str) -> Dict[str, Union[str, float]]:
         """Analyze sentiment of a single text."""
