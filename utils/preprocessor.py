@@ -187,7 +187,8 @@ class DataPreprocessor:
                         'source': source,
                         'sentiment': sentiment_result['sentiment'],
                         'confidence': sentiment_result['confidence'],
-                        'date_collected': datetime.now().isoformat()
+                        'date_collected': datetime.now().isoformat(),
+                        'date': item.get('date', datetime.now().isoformat())
                     }
                     processed_items.append(processed_item)
 

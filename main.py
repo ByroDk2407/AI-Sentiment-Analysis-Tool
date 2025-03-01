@@ -220,7 +220,8 @@ if __name__ == "__main__":
             print(f"Found {len(newsapi_articles)} articles")
             
             for article in newsapi_articles:
-                print(f"\nTitle: {article['title']}")
-                print(f"Date: {article['date_of_article']}")
-                print(f"Sentiment: {article['sentiment']} (confidence: {article['confidence']:.2f})")
-                print(f"URL: {article['url']}")
+                print(f"\nTitle:\t\t {article['title']}")
+                print(f"Date:\t\t {article['date_of_article']}")
+                print(f"Date Collected:\t {article['date_collected']}")
+                print(f"Sentiment:\t {article['sentiment']} (confidence: {article['confidence']:.2f})")
+                print("\n\n")
