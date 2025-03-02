@@ -1,7 +1,7 @@
 import logging
-from utils.db_manager import DatabaseManager, Base, Article
+from db_manager import DatabaseManager, Base
 from sqlalchemy import create_engine, inspect
-from utils.config import Config
+from config import Config
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

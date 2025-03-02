@@ -1,4 +1,3 @@
-import tweepy
 import praw
 from GoogleNews import GoogleNews
 from datetime import datetime, timedelta
@@ -10,59 +9,7 @@ import logging
 from newsapi import NewsApiClient
 import json
 import random
-
 logger = logging.getLogger(__name__)
-
-class TwitterScraper:
-    def __init__(self):
-        auth = tweepy.OAuth1UserHandler(
-            consumer_key=Config.TWITTER_API_KEY,
-            consumer_secret=Config.TWITTER_API_SECRET,
-            access_token=Config.TWITTER_ACCESS_TOKEN,
-            access_token_secret=Config.TWITTER_ACCESS_TOKEN_SECRET,
-        )
-        auth.set_access_token(
-            Config.TWITTER_ACCESS_TOKEN,
-            Config.TWITTER_ACCESS_TOKEN_SECRET
-        )
-        self.api = tweepy.API(auth, wait_on_rate_limit=True)
-
-    def scrape_tweets(self) -> List[Dict]:
-        """Scrape tweets related to Australian real estate."""
-        tweets = []
-        
-        for keyword in Config.TWITTER_KEYWORDS:
-            try:
-                # Search tweets using Twitter API v1.1
-                search_results = self.api.search_tweets(
-                    q=f"{keyword} -filter:retweets",
-                    lang="en",
-                    count=1, #Config.TWITTER_MAX_RESULTS,
-                    tweet_mode="extended"
-                )
-                
-                for tweet in search_results:
-                    tweets.append({
-                        'content': tweet.full_text,
-                        'date': tweet.created_at.isoformat(),
-                        'source': 'twitter',
-                        'url': f"https://twitter.com/twitter/status/{tweet.id}",
-                        'metrics': {
-                            'retweet_count': tweet.retweet_count,
-                            'favorite_count': tweet.favorite_count,
-                            'reply_count': getattr(tweet, 'reply_count', 0)
-                        },
-                        'keyword': keyword,
-                        'user': tweet.user.screen_name
-                    })
-                
-                print(f"Found {len(search_results)} tweets for keyword: {keyword}")
-            
-            except Exception as e:
-                print(f"Error scraping Twitter for keyword {keyword}: {str(e)}")
-                continue
-        
-        return tweets
 
 
 class RedditScraper:
@@ -358,21 +305,6 @@ class SocialMediaAggregator:
 if __name__ == "__main__":
     print("Testing Social Media Scrapers...")
     
-    # # Test Twitter Scraper
-    # print("\n\n\n\n=== Testing Twitter Scraper ===")
-    # try:
-    #     twitter = TwitterScraper()
-    #     tweets = twitter.scrape_tweets()
-    #     print(f"Successfully scraped {len(tweets)} tweets")
-    #     if tweets:
-    #         print("Sample tweet:")
-    #         sample_tweet = tweets[0]
-    #         print(f"Content: {sample_tweet['content'][::100]}...")
-    #         print(f"Date: {sample_tweet['date']}")
-    #         print(f"Metrics: {sample_tweet['metrics']}")
-    # except Exception as e:
-    #     print(f"Error testing Twitter scraper: {str(e)}")
-
     #Test Reddit Scraper
     print("\n\n\n\n=== Testing Reddit Scraper ===")
     try:

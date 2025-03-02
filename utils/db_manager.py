@@ -23,7 +23,7 @@ class Article(Base):
     date_of_article = Column(DateTime, nullable=True)
     sentiment = Column(String)
     confidence = Column(Float)
-    sentiment_score = Column(Float)  # New field for -1 to 1 score
+    sentiment_score = Column(Float)
 
 class DailySentiment(Base):
     __tablename__ = 'daily_sentiments'
@@ -209,7 +209,7 @@ class DatabaseManager:
                 Article.date_of_article.desc()
             ).all()
             
-            logger.info(f"Found {len(articles)} articles in database for {days} day period")
+            #logger.info(f"Found {len(articles)} articles in database for {days} day period")
             
             results = []
             for article in articles:

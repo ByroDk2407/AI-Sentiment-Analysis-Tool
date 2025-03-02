@@ -1,3 +1,4 @@
+# Import necessary libraries
 import logging
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -6,6 +7,7 @@ import plotly.graph_objects as go
 import argparse
 import requests
 
+# Import custom modules
 from utils.social_media_scraper import SocialMediaAggregator
 from utils.preprocessor import DataPreprocessor
 from utils.db_manager import DatabaseManager
@@ -14,15 +16,15 @@ from utils.config import Config
 from utils.data_preparer import DataPreparer
 from utils.db_manager import DailySentiment
 
-# Configure logging to show only warnings and errors by default
+# Configure logging to show only warnings and errors by default for the main application
 logging.basicConfig(
     level=logging.INFO,
     format='%(levelname)s: %(message)s'
 )
-
-# Only show info logs for the main application
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+
 
 class RealEstateSentimentAnalyzer:
     def __init__(self):
@@ -37,15 +39,12 @@ class RealEstateSentimentAnalyzer:
         logger.info("Starting data collection from all sources...")
         
         try:
+            # Collect data from all sources
             raw_data = self.social_media_aggregator.gather_all_data()
-            
-            collection_stats = {
-                source: len(data) for source, data in raw_data.items()
-            }
+            collection_stats = {source: len(data) for source, data in raw_data.items()}
             logger.info(f"Data collection stats: {collection_stats}")
-            
             return raw_data
-            
+        
         except Exception as e:
             logger.error(f"Error collecting data: {str(e)}")
             return {}
@@ -75,17 +74,12 @@ class RealEstateSentimentAnalyzer:
         try:
             saved_count = 0
             for item in processed_data:
-                print(f"\nStoring item:")
-                print(f"Original sentiment_score: {item.get('sentiment_score')}")
-                
                 # Get sentiment analysis results
                 sentiment_scores = {
-                    'confidence': item.get('confidence', 0.0),
-                    'sentiment': item.get('sentiment', 'neutral'),
-                    'sentiment_score': item.get('sentiment_score', 0.0)
+                    'confidence':       item.get('confidence', 0.0),
+                    'sentiment':        item.get('sentiment', 'neutral'),
+                    'sentiment_score':  item.get('sentiment_score', 0.0)
                 }
-                
-                print(f"Sentiment scores dict: {sentiment_scores}")
                 
                 if self.db_manager.save_article(item, sentiment_scores):
                     saved_count += 1
@@ -123,18 +117,17 @@ class RealEstateSentimentAnalyzer:
                 overall_sentiment = sentiment_counts.index[0] if not sentiment_counts.empty else "unknown"
                 
                 summary = {
-                    'overall_sentiment': overall_sentiment,
-                    'sentiment_distribution': sentiment_counts.to_dict(),
-                    'total_articles': len(df),
-                    'sources_distribution': df['source'].value_counts().to_dict(),
-                    'date_range': {
-                        'start': df['date_collected'].min().isoformat() if not df.empty else None,
-                        'end': df['date_collected'].max().isoformat() if not df.empty else None
+                    'overall_sentiment':        overall_sentiment,
+                    'sentiment_distribution':   sentiment_counts.to_dict(),
+                    'total_articles':           len(df),
+                    'sources_distribution':     df['source'].value_counts().to_dict(),
+                    'date_range':{              
+                                                'start': df['date_collected'].min().isoformat() if not df.empty else None,
+                                                'end': df['date_collected'].max().isoformat() if not df.empty else None
                     }
                 }
                 
                 logger.info(f"Successfully generated summary for {len(df)} articles")
-                
                 return summary
                 
             except Exception as e:
@@ -156,21 +149,15 @@ class RealEstateSentimentAnalyzer:
             
             # Load all datasets
             property_data = data_preparer.load_property_data('datasets/combined_property_data.csv')
-            #economic_data = data_preparer.load_economic_data('datasets/economic_data.csv')
             sentiment_data = data_preparer.get_sentiment_data()
             
             # Prepare LSTM dataset with aligned dates
-            lstm_data = data_preparer.prepare_lstm_dataset(
-                property_data=property_data,
-                #economic_data=economic_data,
-                sentiment_data=sentiment_data
-            )
+            lstm_data = data_preparer.prepare_lstm_dataset(property_data=property_data,sentiment_data=sentiment_data)
             
             if lstm_data.empty:
                 print("Failed to prepare LSTM dataset")
                 return None
             
-            print(f"LSTM dataset prepared with shape: {lstm_data.shape}")
             return lstm_data
             
         except Exception as e:

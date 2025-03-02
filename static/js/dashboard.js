@@ -40,21 +40,19 @@ function updateDashboard(data) {
     updateSentimentDistribution(data);
     updateRecentArticles(data);
     
-    // Add LSTM predictions
-    if (!data.lstm_data) {
-        fetch('/api/predict')
-            .then(response => response.json())
-            .then(predictions => {
-                if (predictions.success) {
-                    updatePricePredictions(predictions);
-                }
-            })
-            .catch(error => {
-                console.error('Error fetching predictions:', error);
-            });
-    } else {
-        updatePricePredictions(data);
-    }
+    // Fetch predictions separately
+    fetch('/api/predict')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                updatePredictions(data);  // Make sure we're using the right function name
+            } else {
+                console.error('Prediction error:', data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching predictions:', error);
+        });
 }
 
 function updateSummaryStats(data) {
@@ -211,6 +209,108 @@ function updateRecentArticles(data) {
     });
 }
 
+function updatePredictions(data) {
+    console.log('Prediction data received:', data);  // Debug log
+    
+    if (!data.predictions) {
+        console.error('No prediction data available');
+        return;
+    }
+    
+    const trace1 = {
+        x: data.predictions.dates,
+        y: data.predictions.actual_sentiment_scores,
+        name: 'Actual Sentiment',
+        type: 'scatter',
+        mode: 'lines',
+        line: {color: '#17a2b8'}
+    };
+
+    const trace2 = {
+        x: data.predictions.dates,
+        y: data.predictions.confidence_scores,
+        name: 'Prediction Confidence',
+        type: 'scatter',
+        mode: 'lines',
+        line: {
+            color: '#007bff',
+            dash: 'dot'
+        }
+    };
+
+    // Add markers for predicted sentiment
+    const colors = {
+        'positive': '#28a745',
+        'neutral': '#ffc107',
+        'negative': '#dc3545'
+    };
+
+    const trace3 = {
+        x: data.predictions.dates,
+        y: data.predictions.confidence_scores,
+        text: data.predictions.sentiments,
+        mode: 'markers',
+        marker: {
+            size: 10,
+            color: data.predictions.sentiments.map(s => colors[s])
+        },
+        name: 'Predicted Sentiment',
+        hovertemplate: '%{text}<br>Confidence: %{y:.2f}<extra></extra>'
+    };
+
+    const layout = {
+        title: 'Market Sentiment Predictions',
+        yaxis: {
+            title: 'Sentiment Score / Confidence',
+            range: [-1, 1]
+        },
+        xaxis: {title: 'Date'},
+        showlegend: true,
+        height: 400,
+        margin: {t: 40}
+    };
+
+    Plotly.newPlot('predictionChart', [trace1, trace2, trace3], layout);
+
+    // Update market reports
+    if (data.market_report) {
+        updateMarketReport('currentMarketReport', data.market_report.current);
+        updateMarketReport('futureMarketReport', data.market_report.future);
+    }
+}
+
+function updateMarketReport(elementId, report) {
+    if (!report) return;
+    
+    const container = document.getElementById(elementId);
+    const indicator = container.querySelector('.sentiment-indicator');
+    const reportText = container.querySelector('.report-text');
+    
+    // Update sentiment indicator
+    indicator.className = 'sentiment-indicator';
+    indicator.classList.add(`sentiment-${report.sentiment}`);
+    
+    // Update report text
+    reportText.innerHTML = report.analysis;
+    
+    // Add confidence indicator
+    const confidenceBar = document.createElement('div');
+    confidenceBar.className = 'progress mt-2';
+    confidenceBar.innerHTML = `
+        <div class="progress-bar" role="progressbar" 
+             style="width: ${report.confidence * 100}%"
+             aria-valuenow="${report.confidence * 100}" 
+             aria-valuemin="0" aria-valuemax="100">
+            Confidence: ${(report.confidence * 100).toFixed(1)}%
+        </div>
+    `;
+    
+    // Replace old confidence bar if exists
+    const oldBar = container.querySelector('.progress');
+    if (oldBar) oldBar.remove();
+    container.appendChild(confidenceBar);
+}
+
 function showError(message) {
     console.error('Dashboard error:', message);
     const alertHtml = `
@@ -220,4 +320,71 @@ function showError(message) {
         </div>
     `;
     document.querySelector('.container-fluid').insertAdjacentHTML('afterbegin', alertHtml);
-} 
+}
+
+function sendMessage() {
+    const input = document.getElementById('chatInput');
+    const message = input.value.trim();
+    
+    if (!message) return;
+    
+    // Add user message to chat
+    addChatMessage(message, 'user');
+    input.value = '';
+    
+    // Create message container for bot response
+    const botMessageId = `msg-${Date.now()}`;
+    const botMessage = document.createElement('div');
+    botMessage.id = botMessageId;
+    botMessage.className = 'chat-message bot-message';
+    botMessage.textContent = 'Thinking...';
+    
+    const chatMessages = document.getElementById('chatMessages');
+    chatMessages.appendChild(botMessage);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    
+    // Send the message
+    fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ message: message })
+    })
+    .then(response => {
+        console.log('Response status:', response.status);
+        return response.json();
+    })
+    .then(data => {
+        console.log('Parsed response data:', data);
+        if (data.success) {
+            botMessage.textContent = data.response;
+        } else {
+            botMessage.textContent = `Error: ${data.error}${data.details ? '\n' + data.details : ''}`;
+        }
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    })
+    .catch(error => {
+        console.error('Chat error:', error);
+        botMessage.textContent = "Sorry, I encountered an error. Please try again.";
+    });
+}
+
+function addChatMessage(message, type) {
+    const chatMessages = document.getElementById('chatMessages');
+    const messageDiv = document.createElement('div');
+    const messageId = `msg-${Date.now()}`;
+    messageDiv.id = messageId;
+    messageDiv.className = `chat-message ${type}-message`;
+    messageDiv.textContent = message;
+    chatMessages.appendChild(messageDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+    return messageId;
+}
+
+// Add event listener for Enter key
+document.getElementById('chatInput').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        sendMessage();
+    }
+}); 

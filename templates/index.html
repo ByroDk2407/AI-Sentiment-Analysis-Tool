@@ -27,6 +27,54 @@
         .sentiment-card {
             border-left: 4px solid #28a745;
         }
+        .report-container {
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+        .sentiment-indicator {
+            width: 100%;
+            height: 5px;
+            margin-bottom: 15px;
+            border-radius: 2px;
+        }
+        .sentiment-positive {
+            background-color: #28a745;
+        }
+        .sentiment-neutral {
+            background-color: #ffc107;
+        }
+        .sentiment-negative {
+            background-color: #dc3545;
+        }
+        .chat-container {
+            max-height: 500px;
+            overflow-y: auto;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+        }
+        .chat-messages {
+            margin-bottom: 15px;
+        }
+        .chat-message {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .user-message {
+            background-color: #007bff;
+            color: white;
+            margin-left: 20%;
+        }
+        .bot-message {
+            background-color: #f8f9fa;
+            margin-right: 20%;
+        }
+        .chat-input-container {
+            margin-top: 15px;
+        }
     </style>
 </head>
 <body>
@@ -98,6 +146,59 @@
                                 <tbody id="articlesTableBody">
                                 </tbody>
                             </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Market Predictions -->
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Market Predictions</h5>
+                        <div id="predictionChart" class="chart-container"></div>
+                    </div>
+                </div>
+
+                <!-- Market Analysis Report -->
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Market Analysis Report</h5>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="card">
+                                    <div class="card-body">
+                                        <h6 class="card-subtitle mb-2 text-muted">Current Market Condition</h6>
+                                        <div id="currentMarketReport" class="report-container">
+                                            <div class="sentiment-indicator"></div>
+                                            <p class="report-text">Loading current market analysis...</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="card">
+                                    <div class="card-body">
+                                        <h6 class="card-subtitle mb-2 text-muted">Future Market Outlook</h6>
+                                        <div id="futureMarketReport" class="report-container">
+                                            <div class="sentiment-indicator"></div>
+                                            <p class="report-text">Loading future market analysis...</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Market Analysis Assistant -->
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Market Analysis Assistant</h5>
+                        <div id="chatContainer" class="chat-container">
+                            <div id="chatMessages" class="chat-messages"></div>
+                            <div class="chat-input-container">
+                                <input type="text" id="chatInput" class="form-control" placeholder="Ask about the Australian real estate market...">
+                                <button class="btn btn-primary mt-2" onclick="sendMessage()">Send</button>
+                            </div>
                         </div>
                     </div>
                 </div>
