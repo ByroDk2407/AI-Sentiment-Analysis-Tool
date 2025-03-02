@@ -1,11 +1,13 @@
 from flask import Flask, render_template, jsonify, request
 from utils.db_manager import DatabaseManager
 from utils.visualizer import DataVisualizer
+from utils.lstm_model import LSTMPredictor
 import pandas as pd
 from datetime import datetime, timedelta
 import logging
+import torch
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static')
 db_manager = DatabaseManager()
 visualizer = DataVisualizer()
 
@@ -13,10 +15,63 @@ visualizer = DataVisualizer()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Initialize LSTM model
+model = None
+
+def init_model():
+    """Initialize the LSTM model."""
+    global model
+    try:
+        model = LSTMPredictor(
+            input_dim=10,
+            hidden_dim=64,
+            num_layers=2,
+            output_dim=1
+        )
+        
+        # Load pretrained weights
+        model.load_state_dict(torch.load('models/pretrained_lstm.pth'))
+        model.eval()  # Set to evaluation mode
+        logger.info("Successfully loaded LSTM model")
+        
+    except Exception as e:
+        logger.error(f"Error initializing model: {str(e)}")
+
+# Initialize model on startup
+init_model()
+
 @app.route('/')
 def index():
     """Render the main dashboard page."""
     return render_template('index.html')
+
+@app.route('/api/predict', methods=['POST'])
+def predict():
+    """API endpoint for LSTM predictions."""
+    try:
+        # Get data from request
+        data = request.get_json()
+        
+        # Load data into DataFrame
+        df = pd.DataFrame(data['data'])
+        
+        # Prepare data
+        X, _ = model.prepare_data(df)
+        
+        # Generate predictions
+        predictions = model.predict(X)
+        
+        return jsonify({
+            'success': True,
+            'predictions': predictions
+        })
+        
+    except Exception as e:
+        logger.error(f"Error processing prediction request: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
 
 @app.route('/api/debug')
 def debug_data():
@@ -78,7 +133,8 @@ def get_data():
             'date_range': {
                 'start': df['date_of_article'].min().strftime('%Y-%m-%d') if not df.empty else None,
                 'end': df['date_of_article'].max().strftime('%Y-%m-%d') if not df.empty else None
-            }
+            },
+            'articles': data
         }
         
         return jsonify(response)
@@ -94,7 +150,6 @@ def get_summary():
     if not data:
         return jsonify({'error': 'No data available'})
     
-    import pandas as pd
     df = pd.DataFrame(data)
     
     summary = {
@@ -107,6 +162,44 @@ def get_summary():
         }
     }
     return jsonify(summary)
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint."""
+    return jsonify({'status': 'healthy'})
+
+@app.route('/api/predict')
+def get_predictions():
+    """API endpoint for LSTM predictions."""
+    try:
+        # Load the combined dataset
+        df = pd.read_csv('datasets/lstm_dataset.csv')
+        
+        # Prepare data for LSTM
+        X, y = model.prepare_data(df)
+        
+        # Generate predictions
+        predictions = model.predict(X)
+        
+        # Get dates for the prediction period
+        dates = df.index[-len(predictions):].strftime('%Y-%m-%d').tolist()
+        actual_prices = df['price_index'].values[-len(predictions):].tolist()
+        
+        return jsonify({
+            'success': True,
+            'lstm_data': {
+                'dates': dates,
+                'actual_prices': actual_prices,
+                'predicted_prices': predictions.tolist()
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error generating predictions: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
 
 if __name__ == '__main__':
     app.run(debug=True) 

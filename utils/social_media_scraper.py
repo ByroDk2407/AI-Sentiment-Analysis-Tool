@@ -318,20 +318,20 @@ class NewsAPIScraper:
 class SocialMediaAggregator:
     def __init__(self):
         self.reddit_scraper = RedditScraper()
-        self.google_scraper = GoogleNewsScraper()
-        self.newsapi_scraper = NewsAPIScraper()
+        #self.google_scraper = GoogleNewsScraper()
+        #self.newsapi_scraper = NewsAPIScraper()
 
     def gather_all_data(self) -> Dict[str, List[Dict]]:
         """Gather data from all sources."""
         print("Gathering data from all sources...")
 
         # Get NewsAPI data
-        newsapi_data = self.newsapi_scraper.scrape_news()
+        #newsapi_data = self.newsapi_scraper.scrape_news()
         #print(f"Successfully scraped {len(newsapi_data)} NewsAPI articles")
 
         # Get Google News data
-        googleNews_data = self.google_scraper.scrape_news()
-        print(f"Successfully scraped {len(googleNews_data)} Google News articles")
+        #googleNews_data = self.google_scraper.scrape_news()
+        #print(f"Successfully scraped {len(googleNews_data)} Google News articles")
 
         # Get Reddit data
         reddit_data = self.reddit_scraper.scrape_subreddits()
@@ -339,8 +339,8 @@ class SocialMediaAggregator:
 
         all_data = {
             'reddit': reddit_data,
-            'google_news': googleNews_data,
-            'newsapi': newsapi_data
+            #'google_news': googleNews_data,
+            #'newsapi': newsapi_data
         }
         # Print dates for articles from each source
         # for source, items in all_data.items():

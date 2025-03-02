@@ -4,12 +4,15 @@ from typing import Dict, List, Optional
 import pandas as pd
 import plotly.graph_objects as go
 import argparse
+import requests
 
 from utils.social_media_scraper import SocialMediaAggregator
 from utils.preprocessor import DataPreprocessor
 from utils.db_manager import DatabaseManager
-from utils.visualizer import DataVisualizer
+from utils.visualizer import DataVisualizer, create_prediction_plot, generate_market_report
 from utils.config import Config
+from utils.data_preparer import DataPreparer
+from utils.db_manager import DailySentiment
 
 # Configure logging to show only warnings and errors by default
 logging.basicConfig(
@@ -72,19 +75,21 @@ class RealEstateSentimentAnalyzer:
         try:
             saved_count = 0
             for item in processed_data:
-                # Debug logging
-                logger.debug(f"Attempting to save item: {item.get('url')}")
-                logger.debug(f"Sentiment scores: confidence={item.get('confidence')}, sentiment={item.get('sentiment')}")
+                print(f"\nStoring item:")
+                print(f"Original sentiment_score: {item.get('sentiment_score')}")
                 
+                # Get sentiment analysis results
                 sentiment_scores = {
                     'confidence': item.get('confidence', 0.0),
-                    'sentiment': item.get('sentiment', 'neutral')
+                    'sentiment': item.get('sentiment', 'neutral'),
+                    'sentiment_score': item.get('sentiment_score', 0.0)
                 }
+                
+                print(f"Sentiment scores dict: {sentiment_scores}")
+                
                 if self.db_manager.save_article(item, sentiment_scores):
                     saved_count += 1
-                    logger.debug(f"Successfully saved item {saved_count}")
             
-            logger.info(f"Successfully saved {saved_count} items to database")
             return saved_count
             
         except Exception as e:
@@ -140,6 +145,38 @@ class RealEstateSentimentAnalyzer:
             logger.error(f"Error getting sentiment summary: {str(e)}")
             return {}
 
+    def prepare_lstm_data(self):
+        """Prepare data for LSTM model."""
+        try:
+            # Initialize components
+            data_preparer = DataPreparer(self.db_manager)
+            
+            # Calculate daily sentiments
+            self.db_manager.calculate_daily_sentiment()
+            
+            # Load all datasets
+            property_data = data_preparer.load_property_data('datasets/combined_property_data.csv')
+            #economic_data = data_preparer.load_economic_data('datasets/economic_data.csv')
+            sentiment_data = data_preparer.get_sentiment_data()
+            
+            # Prepare LSTM dataset with aligned dates
+            lstm_data = data_preparer.prepare_lstm_dataset(
+                property_data=property_data,
+                #economic_data=economic_data,
+                sentiment_data=sentiment_data
+            )
+            
+            if lstm_data.empty:
+                print("Failed to prepare LSTM dataset")
+                return None
+            
+            print(f"LSTM dataset prepared with shape: {lstm_data.shape}")
+            return lstm_data
+            
+        except Exception as e:
+            print(f"Error preparing LSTM data: {str(e)}")
+            return None
+
     def generate_visualizations(self, data: List[Dict]) -> Dict[str, go.Figure]:
         """Generate all visualizations."""
         try:
@@ -173,6 +210,44 @@ class RealEstateSentimentAnalyzer:
         
         return summary
 
+    def generate_predictions(self):
+        """Generate predictions using LSTM model."""
+        try:
+            # Load LSTM dataset
+            df = pd.read_csv('datasets/lstm_dataset.csv')
+            
+            # Make API request for predictions
+            response = requests.post(
+                'http://localhost:5000/predict',
+                json={'data': df.to_dict('records')}
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data['success']:
+                    predictions = data['predictions']
+                    
+                    # Create visualization
+                    fig = create_prediction_plot(
+                        dates=df['date'].tolist(),
+                        actual=df['price'].tolist(),
+                        predicted=predictions
+                    )
+                    
+                    # Generate report
+                    report = generate_market_report(df, predictions)
+                    
+                    return {
+                        'figure': fig,
+                        'report': report
+                    }
+                    
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error generating predictions: {str(e)}")
+            return None
+
 
 if __name__ == "__main__":
     # Set up argument parser
@@ -180,6 +255,9 @@ if __name__ == "__main__":
     parser.add_argument('--collect', action='store_true', help='Collect new data')
     parser.add_argument('--visualise', action='store_true', help='Generate visualizations')
     parser.add_argument('--display', action='store_true', help='Display sample articles from each source and time period')
+    parser.add_argument('--combine', action='store_true', help='Combine datasets and prepare LSTM data')
+    parser.add_argument('--showsent', action='store_true', help='Display daily sentiment scores')
+    parser.add_argument('--setupmodel', action='store_true', help='Download and setup the LSTM model')
     args = parser.parse_args()
 
     # Initialize the analyzer
@@ -202,6 +280,44 @@ if __name__ == "__main__":
         # Save to database
         saved_count = analyzer.store_data(processed_data)
         print(f"\nSaved {saved_count} items to database")
+        
+        # Calculate daily sentiments after saving articles
+        print("\nCalculating daily sentiment averages...")
+        if analyzer.db_manager.calculate_daily_sentiment():
+            print("Successfully calculated daily sentiment scores")
+        else:
+            print("Failed to calculate daily sentiment scores")
+    
+    if args.combine:
+        print("\nCombining datasets for LSTM...")
+        lstm_data = analyzer.prepare_lstm_data()
+        
+        if lstm_data is not None and not lstm_data.empty:
+            print("\nLSTM Dataset Preview:")
+            print("\nShape:", lstm_data.shape)
+            print("\nColumns:", lstm_data.columns.tolist())
+            print("\nDate Range:")
+            print(f"Start: {lstm_data['date'].min()}")
+            print(f"End: {lstm_data['date'].max()}")
+            
+            print("\nFirst few rows:")
+            pd.set_option('display.max_columns', None)
+            pd.set_option('display.width', None)
+            print(lstm_data.head())
+            
+            print("\nDescriptive Statistics:")
+            print(lstm_data.describe())
+            
+            print("\nMissing Values:")
+            missing = lstm_data.isnull().sum()
+            if missing.any():
+                print(missing[missing > 0])
+            else:
+                print("No missing values found")
+            
+            print("\nDataset saved to: datasets/lstm_dataset.csv")
+        else:
+            print("Failed to create LSTM dataset")
     
     if args.visualise:
         print("\nGenerating visualisations...")
@@ -213,15 +329,71 @@ if __name__ == "__main__":
             print(f"\nArticles from last {period} days:")
             articles = analyzer.db_manager.get_recent_sentiments(days=period)
             
-            # Filter for NewsAPI articles
-            newsapi_articles = [a for a in articles if a['source'] == 'newsapi']
+            # Group articles by source
+            sources = set(a['source'] for a in articles)
             
-            print(f"\nNewsAPI Articles")
-            print(f"Found {len(newsapi_articles)} articles")
+            for source in sources:
+                source_articles = [a for a in articles if a['source'] == source]
+                
+                print(f"\n{source.upper()} Articles")
+                print(f"Found {len(source_articles)} articles")
+                
+                for article in source_articles:
+                    print(f"\nTitle:\t\t {article['title']}")
+                    print(f"Date:\t\t {article['date_of_article']}")
+                    print(f"Date Collected:\t {article['date_collected']}")
+                    print(f"Sentiment:\t {article['sentiment']} (confidence: {article['confidence']:.2f})")
+                    print(f"Sentiment Score:\t {article['sentiment_score']:.2f}")
+                    print("\n\n")
+    
+    if args.showsent:
+        print("\nDisplaying Daily Sentiment Scores...")
+        try:
+            session = analyzer.db_manager.Session()
+            daily_sentiments = session.query(DailySentiment).order_by(DailySentiment.date.desc()).all()
             
-            for article in newsapi_articles:
-                print(f"\nTitle:\t\t {article['title']}")
-                print(f"Date:\t\t {article['date_of_article']}")
-                print(f"Date Collected:\t {article['date_collected']}")
-                print(f"Sentiment:\t {article['sentiment']} (confidence: {article['confidence']:.2f})")
-                print("\n\n")
+            if not daily_sentiments:
+                print("No sentiment data available.")
+            else:
+                print("\nDaily Sentiment Analysis:")
+                print(f"{'Date':<12} {'Score':>8} {'Articles':>8} {'Pos%':>7} {'Neg%':>7} {'Neu%':>7}")
+                print("-" * 55)
+                
+                for sent in daily_sentiments:
+                    total = sent.article_count
+                    pos_pct = (sent.positive_count / total * 100) if total > 0 else 0
+                    neg_pct = (sent.negative_count / total * 100) if total > 0 else 0
+                    neu_pct = (sent.neutral_count / total * 100) if total > 0 else 0
+                    
+                    # Format the date and numbers
+                    date_str = sent.date.strftime('%Y-%m-%d')
+                    score_str = f"{sent.average_score:>6.5f}"
+                    articles_str = f"{sent.article_count:>8}"
+                    pos_str = f"{pos_pct:>6.1f}%"
+                    neg_str = f"{neg_pct:>6.1f}%"
+                    neu_str = f"{neu_pct:>6.1f}%"
+                    
+                    print(f"{date_str} {score_str} {articles_str} {pos_str} {neg_str} {neu_str}")
+                
+                # Print summary statistics
+                print("\nSummary Statistics:")
+                scores = [s.average_score for s in daily_sentiments]
+                print(f"Average Sentiment Score: {sum(scores)/len(scores):.2f}")
+                print(f"Highest Score: {max(scores):.2f}")
+                print(f"Lowest Score: {min(scores):.2f}")
+                print(f"Total Articles Analyzed: {sum(s.article_count for s in daily_sentiments)}")
+                
+            session.close()
+            
+        except Exception as e:
+            print(f"Error displaying sentiment scores: {str(e)}")
+            if session:
+                session.close()
+
+    if args.setupmodel:
+        print("\nSetting up LSTM model...")
+        from utils.model_downloader import download_and_setup_models
+        if download_and_setup_models():
+            print("Successfully set up LSTM model")
+        else:
+            print("Failed to set up LSTM model")

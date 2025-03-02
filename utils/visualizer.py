@@ -124,4 +124,56 @@ class DataVisualizer:
             }
         except Exception as e:
             logger.error(f"Error creating dashboard figures: {str(e)}")
-            return {} 
+            return {}
+
+def create_prediction_plot(dates: List[str], actual: List[float], predicted: List[float]) -> go.Figure:
+    """Create interactive plot comparing actual vs predicted values."""
+    fig = go.Figure()
+    
+    # Add actual values
+    fig.add_trace(go.Scatter(
+        x=dates,
+        y=actual,
+        mode='lines',
+        name='Actual',
+        line=dict(color='blue')
+    ))
+    
+    # Add predicted values
+    fig.add_trace(go.Scatter(
+        x=dates,
+        y=predicted,
+        mode='lines',
+        name='Predicted',
+        line=dict(color='red', dash='dash')
+    ))
+    
+    # Update layout
+    fig.update_layout(
+        title='Property Price Predictions',
+        xaxis_title='Date',
+        yaxis_title='Price',
+        hovermode='x unified'
+    )
+    
+    return fig
+
+def generate_market_report(df: pd.DataFrame, predictions: List[float]) -> Dict:
+    """Generate market analysis report."""
+    latest_price = df['price'].iloc[-1]
+    pred_price = predictions[-1]
+    price_change = ((pred_price - latest_price) / latest_price) * 100
+    
+    # Calculate trend indicators
+    sentiment_trend = df['sentiment_score'].rolling(window=7).mean().iloc[-1]
+    volume_trend = df['article_count'].rolling(window=7).mean().iloc[-1]
+    
+    return {
+        'current_price': latest_price,
+        'predicted_price': pred_price,
+        'price_change_percent': price_change,
+        'market_sentiment': 'Positive' if sentiment_trend > 0 else 'Negative',
+        'sentiment_strength': abs(sentiment_trend),
+        'market_activity': volume_trend,
+        'prediction_confidence': 'High' if volume_trend > 10 else 'Medium'
+    } 

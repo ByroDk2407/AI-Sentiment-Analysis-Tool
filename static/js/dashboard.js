@@ -1,196 +1,223 @@
+// Global variables for charts
+let sentimentTimelineChart = null;
+let sentimentDistributionChart = null;
+let pricePredictionChart = null;
+
 // Dashboard state
 let currentPeriod = 30;
 let charts = {};
 
 // Initialize dashboard
-$(document).ready(function() {
-    // Sidebar toggle
-    $('#sidebarCollapse').on('click', function() {
-        $('#sidebar').toggleClass('active');
-    });
-
-    // Time period buttons
-    $('.btn-group .btn').on('click', function() {
-        // Update active state
-        $('.btn-group .btn').removeClass('active');
-        $(this).addClass('active');
-        
-        // Update period and refresh data
-        currentPeriod = parseInt($(this).data('period'));
-        updateDashboard();
-    });
-
-    // Initial load
-    updateDashboard();
-    
-    // Update every 5 minutes
-    setInterval(updateDashboard, 300000);
+document.addEventListener('DOMContentLoaded', function() {
+    refreshData();
 });
 
-// Update all dashboard components
-function updateDashboard() {
-    $.get(`/api/data?days=${currentPeriod}`)
-        .done(function(data) {
+function refreshData() {
+    const days = document.getElementById('timeRange').value;
+    fetch(`/api/data?days=${days}`)
+        .then(response => response.json())
+        .then(data => {
             if (data.error) {
                 showError(data.error);
                 return;
             }
-            updateCharts(data);
-            updateStats(data);
-            updateDateRange(data.date_range);
+            updateDashboard(data);
         })
-        .fail(function(jqXHR, textStatus, errorThrown) {
-            showError(`Failed to fetch data: ${errorThrown}`);
+        .catch(error => {
+            console.error('Error refreshing data:', error);
+            showError('Failed to fetch dashboard data');
         });
 }
 
-// Update date range display
-function updateDateRange(dateRange) {
-    if (dateRange.start && dateRange.end) {
-        const start = new Date(dateRange.start).toLocaleDateString();
-        const end = new Date(dateRange.end).toLocaleDateString();
-        $('#dateRange').html(`
-            <i class="fas fa-calendar"></i>
-            <strong>Date Range:</strong> ${start} - ${end}
-        `);
+function updateDashboard(data) {
+    if (!data) {
+        showError('No data available');
+        return;
+    }
+    
+    updateSummaryStats(data);
+    updateSentimentTimeline(data);
+    updateSentimentDistribution(data);
+    updateRecentArticles(data);
+    
+    // Add LSTM predictions
+    if (!data.lstm_data) {
+        fetch('/api/predict')
+            .then(response => response.json())
+            .then(predictions => {
+                if (predictions.success) {
+                    updatePricePredictions(predictions);
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching predictions:', error);
+            });
+    } else {
+        updatePricePredictions(data);
     }
 }
 
-// Update statistics cards
-function updateStats(data) {
-    $('#totalArticles').text(data.total_articles || 0);
+function updateSummaryStats(data) {
+    if (!data.total_articles) return;
     
-    const sentiment = data.overall_sentiment || 'Unknown';
-    $('#overallSentiment').text(sentiment.charAt(0).toUpperCase() + sentiment.slice(1));
-    
-    // Update sentiment icon and color
-    const sentimentIcon = $('#overallSentiment').closest('.stat-card').find('i');
-    sentimentIcon.removeClass().addClass('fas');
-    
-    switch(sentiment.toLowerCase()) {
-        case 'positive':
-            sentimentIcon.addClass('fa-smile text-success');
-            break;
-        case 'negative':
-            sentimentIcon.addClass('fa-frown text-danger');
-            break;
-        default:
-            sentimentIcon.addClass('fa-meh text-warning');
-    }
+    const summaryHtml = `
+        <p><strong>Total Articles:</strong> ${data.total_articles}</p>
+        <p><strong>Sentiment Distribution:</strong></p>
+        <ul class="list-unstyled">
+            ${Object.entries(data.sentiment_distribution || {}).map(([key, value]) => 
+                `<li>${key.charAt(0).toUpperCase() + key.slice(1)}: ${value}</li>`
+            ).join('')}
+        </ul>
+        <p><strong>Date Range:</strong></p>
+        <p>${new Date(data.date_range.start).toLocaleDateString()} - 
+           ${new Date(data.date_range.end).toLocaleDateString()}</p>
+    `;
+    document.getElementById('summaryStats').innerHTML = summaryHtml;
 }
 
-// Update charts with time period information
-function updateCharts(data) {
-    // Update sentiment pie chart
-    updateSentimentPie(data.sentiment_distribution);
+function updateSentimentTimeline(data) {
+    if (!data.timeline_data) return;
     
-    // Update source distribution
-    updateSourceBar(data.source_distribution);
-    
-    // Update timeline with proper date range
-    updateSentimentTimeline(data.timeline_data);
-    
-    // Update summary stats
-    $('#totalArticles').text(data.total_articles);
-    $('#timeRange').text(currentPeriod + ' days');
-    
-    // Update date range display
-    if (data.date_range.start && data.date_range.end) {
-        const start = new Date(data.date_range.start).toLocaleDateString();
-        const end = new Date(data.date_range.end).toLocaleDateString();
-        $('#dateRange').text(`${start} - ${end}`);
-    }
-}
-
-// Sentiment Distribution Pie Chart
-function updateSentimentPie(distribution) {
-    const colors = {
-        positive: '#2ecc71',
-        negative: '#e74c3c',
-        neutral: '#95a5a6'
-    };
-
-    const config = {
-        data: [{
-            values: Object.values(distribution),
-            labels: Object.keys(distribution),
-            type: 'pie',
-            hole: 0.4,
-            marker: {
-                colors: Object.keys(distribution).map(key => colors[key.toLowerCase()])
-            }
-        }],
-        layout: {
-            showlegend: true,
-            legend: { orientation: 'h' },
-            margin: { t: 10, l: 0, r: 0, b: 0 },
-            height: 300
-        }
-    };
-
-    Plotly.newPlot('sentimentPie', config.data, config.layout);
-}
-
-// Sources Distribution Bar Chart
-function updateSourceBar(distribution) {
-    const config = {
-        data: [{
-            x: Object.keys(distribution),
-            y: Object.values(distribution),
-            type: 'bar',
-            marker: {
-                color: '#3498db'
-            }
-        }],
-        layout: {
-            margin: { t: 10, l: 40, r: 10, b: 60 },
-            height: 300,
-            xaxis: {
-                tickangle: -45
-            }
-        }
-    };
-
-    Plotly.newPlot('sourceBar', config.data, config.layout);
-}
-
-// Sentiment Timeline
-function updateSentimentTimeline(timelineData) {
-    const colors = {
-        positive: '#2ecc71',
-        negative: '#e74c3c',
-        neutral: '#95a5a6'
-    };
-
-    const traces = Object.keys(colors).map(sentiment => ({
-        x: timelineData.dates,
-        y: timelineData[sentiment],
-        name: sentiment.charAt(0).toUpperCase() + sentiment.slice(1),
+    const trace1 = {
+        x: data.timeline_data.dates,
+        y: data.timeline_data.positive,
+        name: 'Positive',
         type: 'scatter',
         mode: 'lines+markers',
-        line: { color: colors[sentiment] }
-    }));
-
-    const layout = {
-        margin: { t: 10, l: 40, r: 10, b: 40 },
-        height: 300,
-        legend: { orientation: 'h', y: -0.2 },
-        yaxis: { title: 'Number of Articles' },
-        xaxis: { title: 'Date' }
+        stackgroup: 'one',
+        line: {color: '#28a745'}
     };
 
-    Plotly.newPlot('sentimentTimeline', traces, layout);
+    const trace2 = {
+        x: data.timeline_data.dates,
+        y: data.timeline_data.negative,
+        name: 'Negative',
+        type: 'scatter',
+        mode: 'lines+markers',
+        stackgroup: 'one',
+        line: {color: '#dc3545'}
+    };
+
+    const trace3 = {
+        x: data.timeline_data.dates,
+        y: data.timeline_data.neutral,
+        name: 'Neutral',
+        type: 'scatter',
+        mode: 'lines+markers',
+        stackgroup: 'one',
+        line: {color: '#ffc107'}
+    };
+
+    const layout = {
+        title: 'Sentiment Timeline',
+        yaxis: {title: 'Number of Articles'},
+        hovermode: 'closest',
+        showlegend: true,
+        legend: {
+            orientation: 'h',
+            y: -0.2
+        }
+    };
+
+    Plotly.newPlot('sentimentTimelineChart', [trace1, trace2, trace3], layout);
 }
 
-// Show error message
+function updateSentimentDistribution(data) {
+    if (!data.sentiment_distribution) return;
+    
+    const values = Object.values(data.sentiment_distribution);
+    const labels = Object.keys(data.sentiment_distribution).map(
+        label => label.charAt(0).toUpperCase() + label.slice(1)
+    );
+
+    const trace = {
+        values: values,
+        labels: labels,
+        type: 'pie',
+        marker: {
+            colors: ['#28a745', '#dc3545', '#ffc107']
+        }
+    };
+
+    const layout = {
+        title: 'Sentiment Distribution',
+        showlegend: true,
+        legend: {
+            orientation: 'h',
+            y: -0.2
+        }
+    };
+
+    Plotly.newPlot('sentimentDistributionChart', [trace], layout);
+}
+
+function updatePricePredictions(data) {
+    if (!data.lstm_data) return;
+    
+    const trace1 = {
+        x: data.lstm_data.dates,
+        y: data.lstm_data.actual_prices,
+        name: 'Actual Prices',
+        type: 'scatter',
+        mode: 'lines',
+        line: {color: '#17a2b8'}
+    };
+
+    const trace2 = {
+        x: data.lstm_data.dates,
+        y: data.lstm_data.predicted_prices,
+        name: 'Predicted Prices',
+        type: 'scatter',
+        mode: 'lines',
+        line: {
+            color: '#007bff',
+            dash: 'dot'
+        }
+    };
+
+    const layout = {
+        title: 'Real Estate Price Predictions',
+        yaxis: {
+            title: 'Price Index',
+            tickformat: ',.0f'
+        },
+        xaxis: {title: 'Date'},
+        hovermode: 'closest',
+        showlegend: true,
+        legend: {
+            orientation: 'h',
+            y: -0.2
+        }
+    };
+
+    Plotly.newPlot('pricePredictionChart', [trace1, trace2], layout);
+}
+
+function updateRecentArticles(data) {
+    const tbody = document.getElementById('articlesTableBody');
+    if (!tbody || !data.articles) return;
+    
+    tbody.innerHTML = ''; // Clear existing content
+    
+    data.articles?.slice(0, 10).forEach(article => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${new Date(article.date_of_article).toLocaleDateString()}</td>
+            <td>${article.title}</td>
+            <td>${article.sentiment}</td>
+            <td>${article.sentiment_score.toFixed(2)}</td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
 function showError(message) {
     console.error('Dashboard error:', message);
-    // Add error alert to the page
     const alertHtml = `
         <div class="alert alert-danger alert-dismissible fade show" role="alert">
             ${message}
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
     `;
-    $('#content').prepend(alertHtml);
+    document.querySelector('.container-fluid').insertAdjacentHTML('afterbegin', alertHtml);
 } 

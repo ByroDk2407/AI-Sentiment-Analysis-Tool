@@ -43,11 +43,11 @@ class Config:
     DATABASE_URL = os.getenv('DATABASE_URL', DEFAULT_DB_URL)
     
     # News Sources
-    NEWS_SOURCES = [
-        'https://www.abc.net.au/news/property/',
-        'https://www.domain.com.au/news/',
-        'https://www.realestate.com.au/news/'
-    ]
+    # NEWS_SOURCES = [
+    #     'https://www.abc.net.au/news/property/',
+    #     'https://www.domain.com.au/news/',
+    #     'https://www.realestate.com.au/news/'
+    # ]
     
     # Model Configuration
     BERT_MODEL_NAME = 'bert-base-uncased'
@@ -55,23 +55,23 @@ class Config:
     BATCH_SIZE = 16
     
     # Sentiment Thresholds
-    SENTIMENT_POSITIVE_THRESHOLD = 0.6
-    SENTIMENT_NEGATIVE_THRESHOLD = 0.4
+    # SENTIMENT_POSITIVE_THRESHOLD = 0.6
+    # SENTIMENT_NEGATIVE_THRESHOLD = 0.4
     
 
     
     # Reddit Configuration
     REDDIT_SUBREDDITS = [
         'AusProperty',
-        'AusFinance',
-        'AusRealEstate',
-        'AusInvest',
-        'PropertyInvesting',
-        'AusPropertyInvesting',
-        'AusPropertyChat',
+        #'AusFinance',
+        #'AusRealEstate',
+        #'AusInvest',
+        #'PropertyInvesting',
+        #'AusPropertyInvesting',
+        #'AusPropertyChat',
         
     ]
-    REDDIT_POST_LIMIT = 250
+    REDDIT_POST_LIMIT = 100 #original=250
     
     # Google News Configuration
     GOOGLE_NEWS_QUERIES = [
@@ -88,7 +88,7 @@ class Config:
         '30d': '1m',   
     }
     
-    GOOGLE_NEWS_PAGES = 3  # Will fetch up to 30 articles per query/period
+    GOOGLE_NEWS_PAGES = 5  # Will fetch up to 30 articles per query/period
     
     # Selenium Configuration
     CHROME_DRIVER_PATH = os.getenv('CHROME_DRIVER_PATH', '/usr/local/bin/chromedriver') 
