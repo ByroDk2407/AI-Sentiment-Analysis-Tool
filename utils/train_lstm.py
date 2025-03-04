@@ -22,10 +22,9 @@ def train_model():
         
         # Initialize model
         model = LSTMPredictor(
-            input_dim=8,
-            hidden_dim=64,
-            num_layers=2,
-            output_dim=3
+            input_dim=8,    # Number of features
+            hidden_dim=64,  # Hidden layer size
+            num_layers=2    # Number of LSTM layers
         )
         
         # Prepare data
@@ -33,27 +32,54 @@ def train_model():
         if X is None or y is None:
             raise ValueError("Failed to prepare data")
         
+        # Convert sentiment scores to class probabilities
+        sentiment_scores = y[:, 0]  # First column is sentiment
+        sentiment_classes = torch.zeros((len(sentiment_scores), 3))  # 3 classes
+        
+        # Convert scores to class probabilities
+        for i, score in enumerate(sentiment_scores):
+            if score < -0.2:
+                sentiment_classes[i] = torch.tensor([0.8, 0.1, 0.1])  # Negative
+            elif score > 0.2:
+                sentiment_classes[i] = torch.tensor([0.1, 0.1, 0.8])  # Positive
+            else:
+                sentiment_classes[i] = torch.tensor([0.1, 0.8, 0.1])  # Neutral
+        
+        # Prepare targets
+        price_targets = torch.FloatTensor(y[:, 1])  # Second column is price
+        rate_targets = torch.FloatTensor(y[:, 2])   # Third column is interest rate
+        
         # Verify data shapes
-        logger.info(f"Input shape: {X.shape}, Output shape: {y.shape}")
+        logger.info(f"Input shape: {X.shape}")
+        logger.info(f"Target shapes - Sentiment: {sentiment_classes.shape}, Price: {price_targets.shape}, Rate: {rate_targets.shape}")
         
         # Split data
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        train_size = int(0.8 * len(X))
+        X_train = torch.FloatTensor(X[:train_size])
+        X_test = torch.FloatTensor(X[train_size:])
         
-        # Convert to tensors
-        X_train = torch.FloatTensor(X_train)
-        y_train = torch.LongTensor(y_train)
-        X_test = torch.FloatTensor(X_test)
-        y_test = torch.LongTensor(y_test)
+        sentiment_train = sentiment_classes[:train_size]
+        sentiment_test = sentiment_classes[train_size:]
+        
+        price_train = price_targets[:train_size]
+        price_test = price_targets[train_size:]
+        
+        rate_train = rate_targets[:train_size]
+        rate_test = rate_targets[train_size:]
         
         # Training parameters
-        criterion = nn.CrossEntropyLoss()
+        criterion = {
+            'sentiment': nn.CrossEntropyLoss(),
+            'price': nn.MSELoss(),
+            'interest_rate': nn.MSELoss()
+        }
         optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
         num_epochs = 50
         batch_size = 32
         
         # Training loop
         logger.info("Starting training...")
-        best_accuracy = 0.0
+        best_loss = float('inf')
         
         for epoch in range(num_epochs):
             model.train()
@@ -63,22 +89,25 @@ def train_model():
             # Train in batches
             for i in range(0, len(X_train), batch_size):
                 batch_X = X_train[i:i+batch_size]
-                batch_y = y_train[i:i+batch_size]
+                batch_sentiment = sentiment_train[i:i+batch_size]
+                batch_price = price_train[i:i+batch_size]
+                batch_rate = rate_train[i:i+batch_size]
                 
                 # Forward pass
                 outputs = model(batch_X)
-                loss = criterion(outputs, batch_y)
                 
-                # Check for NaN loss
-                if torch.isnan(loss):
-                    logger.error(f"NaN loss detected at epoch {epoch+1}, batch {batch_count}")
-                    logger.error(f"Outputs: min={outputs.min()}, max={outputs.max()}")
-                    raise ValueError("NaN loss detected")
+                # Calculate losses
+                sentiment_loss = criterion['sentiment'](outputs['sentiment'], batch_sentiment)
+                price_loss = criterion['price'](outputs['price'], batch_price.unsqueeze(-1))
+                rate_loss = criterion['interest_rate'](outputs['interest_rate'], batch_rate.unsqueeze(-1))
+                
+                # Combined loss
+                loss = sentiment_loss + 0.5 * (price_loss + rate_loss)
                 
                 # Backward pass and optimize
                 optimizer.zero_grad()
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)  # Add gradient clipping
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 optimizer.step()
                 
                 total_loss += loss.item()
@@ -88,23 +117,23 @@ def train_model():
             model.eval()
             with torch.no_grad():
                 test_outputs = model(X_test)
-                test_loss = criterion(test_outputs, y_test)
-                predictions = torch.argmax(test_outputs, dim=1)
-                accuracy = (predictions == y_test).float().mean()
+                test_sentiment_loss = criterion['sentiment'](test_outputs['sentiment'], sentiment_test)
+                test_price_loss = criterion['price'](test_outputs['price'], price_test.unsqueeze(-1))
+                test_rate_loss = criterion['interest_rate'](test_outputs['interest_rate'], rate_test.unsqueeze(-1))
+                
+                test_loss = test_sentiment_loss + 0.5 * (test_price_loss + test_rate_loss)
                 
                 # Save best model
-                if accuracy > best_accuracy:
-                    best_accuracy = accuracy
-                    os.makedirs('utils/models', exist_ok=True)
+                if test_loss < best_loss:
+                    best_loss = test_loss
                     torch.save(model.state_dict(), 'utils/models/pretrained_lstm.pth')
             
             if (epoch + 1) % 5 == 0:
                 logger.info(f'Epoch [{epoch+1}/{num_epochs}], '
                           f'Loss: {total_loss/batch_count:.4f}, '
-                          f'Test Loss: {test_loss:.4f}, '
-                          f'Accuracy: {accuracy:.4f}')
+                          f'Test Loss: {test_loss:.4f}')
         
-        logger.info(f"Best accuracy achieved: {best_accuracy:.4f}")
+        logger.info(f"Best test loss achieved: {best_loss:.4f}")
         return True
         
     except Exception as e:

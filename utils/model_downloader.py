@@ -25,12 +25,11 @@ def download_and_setup_models():
         tokenizer.save_pretrained('models/finbert_sentiment')
         logger.info("Successfully saved sentiment classification model")
         
-        # Initialize LSTM model
+        # Initialize LSTM model with new parameters
         lstm_model = LSTMPredictor(
-            input_dim=10,
-            hidden_dim=64,
-            num_layers=2,
-            output_dim=1
+            input_dim=8,    # Number of features in your dataset
+            hidden_dim=64,  # Size of hidden layer
+            num_layers=2    # Number of LSTM layers
         )
         
         # Initialize LSTM weights properly
@@ -57,7 +56,7 @@ def download_and_setup_models():
         
         # Verify both models
         test_sentiment = AutoModelForSequenceClassification.from_pretrained('models/finbert_sentiment')
-        test_lstm = LSTMPredictor(input_dim=10, hidden_dim=64, num_layers=2, output_dim=1)
+        test_lstm = LSTMPredictor(input_dim=8, hidden_dim=64, num_layers=2)
         test_lstm.load_state_dict(torch.load('models/pretrained_lstm.pth'))
         
         logger.info("Successfully verified both models")

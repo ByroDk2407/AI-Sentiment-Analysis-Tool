@@ -148,7 +148,7 @@ class RealEstateSentimentAnalyzer:
             self.db_manager.calculate_daily_sentiment()
             
             # Load all datasets
-            property_data = data_preparer.load_property_data('datasets/combined_property_data.csv')
+            property_data = data_preparer.load_property_data('utils\datasets\combined_property_data.csv')
             sentiment_data = data_preparer.get_sentiment_data()
             
             # Prepare LSTM dataset with aligned dates

@@ -63,15 +63,15 @@ class Config:
     # Reddit Configuration
     REDDIT_SUBREDDITS = [
         'AusProperty',
-        #'AusFinance',
-        #'AusRealEstate',
-        #'AusInvest',
-        #'PropertyInvesting',
-        #'AusPropertyInvesting',
-        #'AusPropertyChat',
+        'AusFinance',
+        'AusRealEstate',
+        'AusInvest',
+        'PropertyInvesting',
+        'AusPropertyInvesting',
+        'AusPropertyChat',
         
     ]
-    REDDIT_POST_LIMIT = 100 #original=250
+    REDDIT_POST_LIMIT = 250 #original=250
     
     # Google News Configuration
     GOOGLE_NEWS_QUERIES = [
@@ -88,7 +88,7 @@ class Config:
         '30d': '1m',   
     }
     
-    GOOGLE_NEWS_PAGES = 5  # Will fetch up to 30 articles per query/period
+    GOOGLE_NEWS_PAGES = 30  # Will fetch up to 30 articles per query/period
     
     # Selenium Configuration
     CHROME_DRIVER_PATH = os.getenv('CHROME_DRIVER_PATH', '/usr/local/bin/chromedriver') 

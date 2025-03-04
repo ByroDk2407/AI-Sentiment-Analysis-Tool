@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request, Response
+from flask import Flask, render_template, jsonify, request, Response, url_for
 from utils.db_manager import DatabaseManager
 from utils.visualizer import DataVisualizer
 from utils.lstm_model import LSTMPredictor
@@ -11,8 +11,13 @@ import requests
 from typing import Optional
 import json 
 from requests.exceptions import RequestException
+import os
+import re
 
-app = Flask(__name__, static_folder='static')
+app = Flask(__name__, 
+    static_folder='static',
+    static_url_path='/static'
+)
 db_manager = DatabaseManager()
 visualizer = DataVisualizer()
 
@@ -28,22 +33,24 @@ def init_model():
     global model
     try:
         model = LSTMPredictor(
-            input_dim=8,  # Match training input features
+            input_dim=8,    # Match your dataset features
             hidden_dim=64,
-            num_layers=2,
-            output_dim=3  # 3 classes: negative, neutral, positive
+            num_layers=2
         )
         
         # Load pretrained weights
         model.load_state_dict(torch.load('utils/models/pretrained_lstm.pth'))
         model.eval()  # Set to evaluation mode
         logger.info("Successfully loaded LSTM model")
+        return True
         
     except Exception as e:
         logger.error(f"Error initializing model: {str(e)}")
+        return False
 
 # Initialize model on startup
-init_model()
+if not init_model():
+    logger.error("Failed to initialize LSTM model")
 
 @app.route('/')
 def index():
@@ -173,112 +180,114 @@ def health_check():
     """Health check endpoint."""
     return jsonify({'status': 'healthy'})
 
-@app.route('/api/predict')
+@app.route('/api/predictions')
 def get_predictions():
-    """API endpoint for LSTM predictions."""
     try:
-        # Load the dataset
-        df = pd.read_csv('utils/datasets/lstm_dataset.csv')
-        logger.info("Loaded dataset with shape: %s", df.shape)
-        
-        # Convert date column to datetime
-        df['date'] = pd.to_datetime(df['date'])
-        df.set_index('date', inplace=True)
-        
-        # Prepare data for LSTM
-        X, _ = model.prepare_data(df)
-        if X is None:
-            raise ValueError("Failed to prepare data")
-        logger.info("Prepared data with shape: %s", X.shape)
+        if model is None:
+            return jsonify({'error': 'LSTM model not initialized'}), 500
             
-        # Convert to tensor
-        X_tensor = torch.FloatTensor(X)
+        # Load the LSTM dataset
+        df = pd.read_csv('utils/datasets/lstm_dataset.csv')
+        df['date'] = pd.to_datetime(df['date'])
         
-        # Generate predictions
-        pred_results = model.predict(X_tensor)
-        logger.info("Generated predictions: %s sentiments", len(pred_results['sentiments']))
-        
-        # Get dates for the prediction period
-        dates = df.index[-len(pred_results['sentiments']):].strftime('%Y-%m-%d').tolist()
-        
-        # Generate market reports
-        current_report, future_report = generate_market_report(
-            pred_results,
-            df['sentiment_score'].values,
-            dates
+        # Generate dates for the next 30 days from the last date in the dataset
+        last_date = df['date'].iloc[-1]
+        future_dates = pd.date_range(
+            start=last_date, 
+            periods=30, 
+            freq='D'
         )
         
-        response = {
-            'success': True,
-            'predictions': {
-                'dates': dates,
-                'sentiments': pred_results['sentiments'],
-                'confidence_scores': pred_results['confidence_scores'],
-                'actual_sentiment_scores': df['sentiment_score'].values[-len(pred_results['sentiments']):].tolist()
-            },
-            'market_report': {
-                'current': current_report,
-                'future': future_report
-            }
-        }
-        logger.info("Returning prediction response with %s dates", len(dates))
-        return jsonify(response)
+        # Get the last 30 days of actual data
+        last_30_days = df.tail(30).copy()
         
+        # Prepare data for predictions
+        X, _ = model.prepare_data(df)
+        if X is None:
+            return jsonify({'error': 'Failed to prepare data'}), 500
+            
+        X_tensor = torch.FloatTensor(X)
+        
+        # Get predictions
+        predictions = model.predict(X_tensor)
+        if predictions is None:
+            return jsonify({'error': 'Failed to generate predictions'}), 500
+        
+        # Get the last 30 predictions
+        try:
+            response_data = {
+                'dates': future_dates.strftime('%Y-%m-%d').tolist(),  # Use generated future dates
+                'actual_prices': last_30_days['price'].tolist(),
+                'predicted_prices': predictions['price'][-30:].tolist(),
+                'actual_rates': last_30_days['Interest_Rate'].tolist(),
+                'predicted_rates': predictions['interest_rate'][-30:].tolist(),
+                'confidence': float(np.mean(np.max(predictions['sentiment'][-30:], axis=1)))
+            }
+            
+            # Log the dates for debugging
+            logger.info(f"Date range: {response_data['dates'][0]} to {response_data['dates'][-1]}")
+            
+            # Validate the data
+            for key, value in response_data.items():
+                if key != 'dates' and key != 'confidence':
+                    value_array = np.array(value)
+                    if np.isnan(value_array).any():
+                        logger.error(f"NaN values found in {key}")
+                        return jsonify({'error': f'Invalid predictions found in {key}'}), 500
+                    if len(value_array) != 30:
+                        logger.error(f"Incorrect length for {key}: {len(value_array)}")
+                        return jsonify({'error': f'Invalid length for {key}'}), 500
+            
+            return jsonify(response_data)
+            
+        except Exception as e:
+            logger.error(f"Error preparing response: {str(e)}")
+            logger.error(f"Response data: {response_data}")
+            return jsonify({'error': 'Failed to prepare prediction response'}), 500
+            
     except Exception as e:
-        logger.error(f"Error generating predictions: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        })
+        logger.error(f"Prediction error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 def generate_market_report(predictions, sentiment_scores, dates):
-    """Generate market analysis report based on LSTM predictions."""
+    """Generate current and future market reports based on predictions."""
     try:
-        # Calculate current market sentiment (last 7 days)
-        current_sentiments = predictions['sentiments'][-7:]
-        current_scores = sentiment_scores[-7:]
-        current_confidence = predictions['confidence_scores'][-7:]
+        # Get the most recent predictions
+        latest_price = predictions['price'][-1]
+        latest_rate = predictions['interest_rate'][-1]
+        latest_sentiment = np.argmax(predictions['sentiment'][-1])  # Get most likely sentiment class
         
-        # Calculate future market sentiment (next 7 days in predictions)
-        future_sentiments = predictions['sentiments'][-14:-7]
-        future_scores = sentiment_scores[-14:-7]
-        future_confidence = predictions['confidence_scores'][-14:-7]
+        # Calculate trends (using last 7 predictions)
+        price_trend = np.mean(np.diff(predictions['price'][-7:]))
+        rate_trend = np.mean(np.diff(predictions['interest_rate'][-7:]))
         
-        # Analyze current market
-        current_sentiment_counts = pd.Series(current_sentiments).value_counts()
-        dominant_current = current_sentiment_counts.index[0]
-        confidence_current = np.mean(current_confidence)
-        avg_score_current = np.mean(current_scores)
+        # Map sentiment index to string
+        sentiment_map = {0: 'negative', 1: 'neutral', 2: 'positive'}
+        current_sentiment = sentiment_map[latest_sentiment]
         
-        # Analyze future market
-        future_sentiment_counts = pd.Series(future_sentiments).value_counts()
-        dominant_future = future_sentiment_counts.index[0]
-        confidence_future = np.mean(future_confidence)
-        avg_score_future = np.mean(future_scores)
-        
-        # Generate reports
+        # Generate current market report
         current_report = {
-            'sentiment': dominant_current,
-            'confidence': confidence_current,
-            'analysis': generate_analysis_text(
-                dominant_current, 
-                confidence_current,
-                avg_score_current,
-                current_sentiment_counts,
-                "current"
-            )
+            'price_level': latest_price,
+            'interest_rate': latest_rate,
+            'price_trend': 'increasing' if price_trend > 0 else 'decreasing',
+            'rate_trend': 'increasing' if rate_trend > 0 else 'decreasing',
+            'sentiment': current_sentiment,
+            'confidence': float(np.max(predictions['sentiment'][-1]))
         }
         
+        # Calculate future sentiment based on predicted trends
+        future_sentiment = 'positive' if price_trend > 0 and rate_trend < 0 else \
+                         'negative' if price_trend < 0 and rate_trend > 0 else \
+                         'neutral'
+        
+        # Generate future market report
         future_report = {
-            'sentiment': dominant_future,
-            'confidence': confidence_future,
-            'analysis': generate_analysis_text(
-                dominant_future,
-                confidence_future,
-                avg_score_future,
-                future_sentiment_counts,
-                "future"
-            )
+            'price_trend': 'increasing' if price_trend > 0 else 'decreasing',
+            'rate_trend': 'increasing' if rate_trend > 0 else 'decreasing',
+            'price_change_pct': (predictions['price'][-1] / predictions['price'][0] - 1) * 100,
+            'rate_change_pct': (predictions['interest_rate'][-1] / predictions['interest_rate'][0] - 1) * 100,
+            'confidence': float(np.mean(np.max(predictions['sentiment'], axis=1))),
+            'sentiment': future_sentiment  # Add sentiment to future report
         }
         
         return current_report, future_report
@@ -287,71 +296,73 @@ def generate_market_report(predictions, sentiment_scores, dates):
         logger.error(f"Error generating market report: {str(e)}")
         return None, None
 
-def generate_analysis_text(sentiment, confidence, avg_score, sentiment_counts, timeframe):
-    """Generate natural language analysis of market conditions."""
-    total_samples = sum(sentiment_counts)
-    sentiment_percentages = {k: (v/total_samples)*100 for k,v in sentiment_counts.items()}
-    
-    if timeframe == "current":
-        time_context = "is currently"
-        time_phrase = "Recent data shows"
-    else:
-        time_context = "is expected to be"
-        time_phrase = "Analysis indicates"
-    
-    # Generate main sentiment statement
-    report = f"{time_phrase} the market {time_context} {sentiment} "
-    report += f"(confidence: {confidence:.1%}). "
-    
-    # Add sentiment distribution
-    report += "The sentiment distribution shows "
-    sentiment_phrases = [
-        f"{sentiment_percentages[sent]:.1f}% {sent}"
-        for sent in sentiment_counts.index
-    ]
-    report += ", ".join(sentiment_phrases) + ". "
-    
-    # Add interpretation
-    if sentiment == "positive":
-        report += "This suggests favorable market conditions "
-    elif sentiment == "negative":
-        report += "This indicates challenging market conditions "
-    else:
-        report += "This suggests stable market conditions "
-    
-    if timeframe == "future":
-        report += "in the coming period. "
-    else:
-        report += "at present. "
-    
-    # Add confidence interpretation
-    if confidence > 0.8:
-        report += "The model shows high confidence in this assessment."
-    elif confidence > 0.6:
-        report += "The model shows moderate confidence in this assessment."
-    else:
-        report += "The model shows some uncertainty in this assessment."
-    
-    return report
+def get_market_context(current_report, future_report, recent_articles):
+    """Generate market context for AI responses."""
+    try:
+        if current_report is None or future_report is None:
+            return "Unable to generate market context due to missing reports."
+            
+        context = "Current Market Analysis:\n"
+        context += f"- Current house price level: ${current_report['price_level']:,.2f}\n"
+        context += f"- Interest rate: {current_report['interest_rate']:.2f}%\n"
+        context += f"- Price trend: {current_report['price_trend']}\n"
+        context += f"- Interest rate trend: {current_report['rate_trend']}\n"
+        context += f"- Market sentiment: {current_report['sentiment']} (confidence: {current_report['confidence']:.2f})\n"
+        
+        context += "\nFuture Market Outlook:\n"
+        context += f"- Expected price trend: {future_report['price_trend']}\n"
+        context += f"- Expected rate trend: {future_report['rate_trend']}\n"
+        context += f"- Projected price change: {future_report['price_change_pct']:.1f}%\n"
+        context += f"- Projected rate change: {future_report['rate_change_pct']:.1f}%\n"
+        context += f"- Forecast confidence: {future_report['confidence']:.2f}\n"
+        
+        context += "\nRecent Market News:\n"
+        for article in recent_articles[:5]:  # Include 5 most recent articles
+            context += f"\n- {article['title']} ({article['date_of_article']})"
+            context += f"\n  Sentiment: {article['sentiment']} (Score: {article['sentiment_score']:.2f})"
+        
+        return context
+        
+    except Exception as e:
+        logger.error(f"Error generating market context: {str(e)}")
+        return "Error generating market context."
 
-def get_market_context(current_report: dict, future_report: dict, recent_articles: list) -> str:
-    """Generate context for the AI from market reports and articles."""
-    context = f"""
-Current Market Condition:
-{current_report['analysis']}
-
-Future Market Outlook:
-{future_report['analysis']}
-
-Recent Market Articles:
-"""
-    
-    # Add 3 most recent articles
-    for article in recent_articles[:3]:
-        context += f"\n- {article['title']} ({article['date_of_article']})"
-        context += f"\n  Sentiment: {article['sentiment']} (Score: {article['sentiment_score']:.2f})"
-    
-    return context
+@app.route('/api/market-report')
+def get_market_report():
+    """API endpoint for market analysis report."""
+    try:
+        # Get predictions
+        df = pd.read_csv('utils/datasets/lstm_dataset.csv')
+        df['date'] = pd.to_datetime(df['date'])
+        
+        X, _ = model.prepare_data(df)
+        X_tensor = torch.FloatTensor(X)
+        predictions = model.predict(X_tensor)
+        
+        if predictions is None:
+            return jsonify({'error': 'Failed to generate predictions'}), 500
+        
+        # Get recent articles
+        recent_articles = db_manager.get_recent_sentiments(days=7)
+        
+        # Generate reports
+        current_report, future_report = generate_market_report(
+            predictions,
+            df['sentiment_score'].values,
+            df['date'].values
+        )
+        
+        if current_report is None or future_report is None:
+            return jsonify({'error': 'Failed to generate market reports'}), 500
+        
+        return jsonify({
+            'current_report': current_report,
+            'future_report': future_report
+        })
+        
+    except Exception as e:
+        logger.error(f"Error generating market report: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 def create_chat_prompt(user_query: str, context: str) -> str:
     """Create a prompt for the AI model."""
@@ -359,7 +370,7 @@ def create_chat_prompt(user_query: str, context: str) -> str:
 You have access to current market data and sentiment analysis.
 
 Only respond to questions about the Australian real estate market. If the question is about any other topic,
-politely ask the user to ask about the Australian real estate market instead. Also please remove any thinking or reasoning print statements.
+politely ask the user to ask about the Australian real estate market instead. Also please remove all text within the <text> tags.
 
 Base your responses on this current market data:
 
@@ -413,30 +424,32 @@ def chat():
         # Define the payload
         payload = {
             "model": "deepseek-r1:1.5b",
-            "messages": [{"role": "user", "content": prompt}]
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False
         }
         response = requests.post(url, json=payload)
         
         if response.status_code == 200:
-            # Collect all response lines first
-            response_lines = list(response.iter_lines(decode_unicode=True))
-            
-            # Process complete response
-            full_response = ""
-            for line in response_lines:
-                if line:  # Ignore empty lines
-                    try:
-                        json_data = json.loads(line)
-                        if "message" in json_data and "content" in json_data["message"]:
-                            full_response += json_data["message"]["content"]
-                    except json.JSONDecodeError:
-                        logger.error(f"Failed to parse line: {line}")
-            
-            # Send complete response to frontend
-            return jsonify({
-                'success': True,
-                'response': full_response
-            })
+            # Get the response content
+            response_data = response.json()
+            if "message" in response_data and "content" in response_data["message"]:
+                # Clean up the response by removing text within <text> tags
+                content = response_data["message"]["content"]
+                # Remove all text between <text> and </text> tags
+                #cleaned_response = re.sub(r'<text>.*?</text>', '', content, flags=re.DOTALL)
+                cleaned_content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
+                # Remove any extra whitespace or newlines
+                #cleaned_response = re.sub(r'\n\s*\n', '\n', cleaned_response.strip())
+                
+                return jsonify({
+                    'success': True,
+                    'response': cleaned_content
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'error': 'Invalid response format from Ollama'
+                })
         else:
             return jsonify({
                 'success': False,
@@ -465,6 +478,11 @@ def check_ollama_health():
             "status": "unhealthy",
             "error": str(e)
         }), 503
+
+# Add this route to explicitly serve static files
+@app.route('/static/<path:filename>')
+def serve_static(filename):
+    return app.send_static_file(filename)
 
 if __name__ == '__main__':
     app.run(debug=True) 

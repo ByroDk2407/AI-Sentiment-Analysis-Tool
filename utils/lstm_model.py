@@ -10,7 +10,7 @@ import torch.nn.functional as F
 logger = logging.getLogger(__name__)
 
 class LSTMPredictor(nn.Module):
-    def __init__(self, input_dim: int, hidden_dim: int, num_layers: int, output_dim: int):
+    def __init__(self, input_dim: int, hidden_dim: int, num_layers: int):
         super(LSTMPredictor, self).__init__()
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
@@ -18,15 +18,40 @@ class LSTMPredictor(nn.Module):
         # LSTM layer
         self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers, batch_first=True)
         
-        # Fully connected layers
-        self.fc1 = nn.Linear(hidden_dim, 32)
-        self.dropout = nn.Dropout(0.2)
-        self.fc2 = nn.Linear(32, output_dim)
-        self.softmax = nn.Softmax(dim=1)
+        # Multiple prediction heads
+        self.sentiment_head = nn.Sequential(
+            nn.Linear(hidden_dim, 32),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(32, 3),  # 3 classes for sentiment
+            nn.Softmax(dim=1)
+        )
+        
+        self.price_head = nn.Sequential(
+            nn.Linear(hidden_dim, 32),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(32, 1)  # Single value for price prediction
+        )
+        
+        self.interest_rate_head = nn.Sequential(
+            nn.Linear(hidden_dim, 32),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(32, 1)  # Single value for interest rate prediction
+        )
         
         # Initialize scalers
         self.feature_scaler = MinMaxScaler()
         self.target_scaler = MinMaxScaler()
+        
+        # Initialize metrics
+        self.train_loss = 0.0
+        self.eval_loss = 0.0
+        self.accuracy = 0.0
+        self.rate_train_loss = 0.0
+        self.rate_eval_loss = 0.0
+        self.rate_accuracy = 0.0
         
     def forward(self, x):
         # Initialize hidden state
@@ -36,14 +61,19 @@ class LSTMPredictor(nn.Module):
         # LSTM forward pass
         out, (hn, cn) = self.lstm(x, (h0.detach(), c0.detach()))
         
-        # Pass through fully connected layers
-        out = self.fc1(out[:, -1, :])
-        out = F.relu(out)
-        out = self.dropout(out)
-        out = self.fc2(out)
-        out = self.softmax(out)
+        # Use only the last timestep for predictions
+        lstm_out = out[:, -1, :]  # Shape: [batch_size, hidden_dim]
         
-        return out
+        # Generate predictions
+        sentiment_pred = self.sentiment_head(lstm_out)  # Shape: [batch_size, 3]
+        price_pred = self.price_head(lstm_out)         # Shape: [batch_size, 1]
+        interest_pred = self.interest_rate_head(lstm_out)  # Shape: [batch_size, 1]
+        
+        return {
+            'sentiment': sentiment_pred,                # Shape: [batch_size, 3]
+            'price': price_pred.squeeze(-1),           # Shape: [batch_size]
+            'interest_rate': interest_pred.squeeze(-1)  # Shape: [batch_size]
+        }
         
     def prepare_data(self, df: pd.DataFrame, sequence_length: int = 10) -> Tuple[np.ndarray, np.ndarray]:
         """Prepare data for LSTM model."""
@@ -66,21 +96,20 @@ class LSTMPredictor(nn.Module):
             
             # Scale the features
             feature_data = df[features].values
-            scaled_features = self.feature_scaler.fit_transform(feature_data)
+            self.feature_scaler.fit(feature_data)
+            scaled_features = self.feature_scaler.transform(feature_data)
             
             # Create sequences
             X, y = [], []
             for i in range(len(df) - sequence_length):
                 X.append(scaled_features[i:(i + sequence_length)])
-                # Convert sentiment to class (0: negative, 1: neutral, 2: positive)
-                sentiment = df['sentiment_score'].iloc[i + sequence_length]
-                if sentiment < -0.2:
-                    y_val = 0  # negative
-                elif sentiment > 0.2:
-                    y_val = 2  # positive
-                else:
-                    y_val = 1  # neutral
-                y.append(y_val)
+                # Use the next value after the sequence as target
+                next_idx = i + sequence_length
+                y.append([
+                    df['sentiment_score'].iloc[next_idx],  # Sentiment target
+                    df['price'].iloc[next_idx],           # Price target
+                    df['Interest_Rate'].iloc[next_idx]    # Interest rate target
+                ])
             
             X = np.array(X)
             y = np.array(y)
@@ -91,7 +120,6 @@ class LSTMPredictor(nn.Module):
                 return None, None
             
             logger.info(f"Prepared data shapes - X: {X.shape}, y: {y.shape}")
-            logger.info(f"Class distribution: {np.bincount(y)}")
             
             return X, y
             
@@ -107,25 +135,45 @@ class LSTMPredictor(nn.Module):
                 # Generate predictions
                 predictions = self(X)
                 
-                # Get predicted classes and confidence scores
-                pred_classes = torch.argmax(predictions, dim=1).numpy()
-                confidence_scores = predictions.max(dim=1)[0].numpy()
+                # Get predictions
+                sentiment_probs = predictions['sentiment'].numpy()  # Shape: [batch_size, 3]
+                price_preds = predictions['price'].numpy()         # Shape: [batch_size]
+                rate_preds = predictions['interest_rate'].numpy()  # Shape: [batch_size]
                 
-                # Convert predictions to sentiment labels
-                sentiment_map = {0: 'negative', 1: 'neutral', 2: 'positive'}
-                sentiment_predictions = [sentiment_map[p] for p in pred_classes]
+                # Create dummy arrays for other features
+                dummy_features = np.zeros((len(price_preds), 8))  # 8 is the number of features
+                
+                # Fill in the predictions at their respective positions
+                dummy_features[:, 2] = rate_preds     # Interest_Rate at index 2
+                dummy_features[:, 3] = price_preds    # Price at index 3
+                
+                # Inverse transform the entire feature set
+                unscaled_features = self.feature_scaler.inverse_transform(dummy_features)
+                
+                # Extract the predictions
+                price_preds_scaled = unscaled_features[:, 3]    # Price column
+                rate_preds_scaled = unscaled_features[:, 2]     # Interest Rate column
+                
+                # Verify predictions are valid
+                if np.isnan(price_preds_scaled).any() or np.isnan(rate_preds_scaled).any():
+                    logger.error("NaN values found in scaled predictions")
+                    return None
+                    
+                # Log shapes for debugging
+                logger.info(f"Prediction shapes - "
+                           f"sentiment: {sentiment_probs.shape}, "
+                           f"price: {price_preds_scaled.shape}, "
+                           f"rate: {rate_preds_scaled.shape}")
                 
                 return {
-                    'sentiments': sentiment_predictions,
-                    'confidence_scores': confidence_scores.tolist()
+                    'sentiment': sentiment_probs,
+                    'price': price_preds_scaled,
+                    'interest_rate': rate_preds_scaled
                 }
                 
         except Exception as e:
             logger.error(f"Error generating predictions: {str(e)}")
-            return {
-                'sentiments': [],
-                'confidence_scores': []
-            }
+            return None
 
     def load_pretrained(self, model_path: str) -> bool:
         """Load pretrained model weights."""

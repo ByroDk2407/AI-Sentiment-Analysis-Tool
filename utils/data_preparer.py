@@ -88,7 +88,7 @@ class DataPreparer:
             merged = merged.sort_values('date')
             
             # Save LSTM dataset
-            merged.to_csv('datasets/lstm_dataset.csv', index=False)
+            merged.to_csv('utils/datasets/lstm_dataset.csv', index=False)
             
             logger.info(f"Created LSTM dataset with {len(merged)} rows")
             logger.info(f"Date range: {merged['date'].min()} to {merged['date'].max()}")
@@ -117,7 +117,7 @@ class DataPreparer:
             combined['negative_ratio'] = combined['negative_ratio'].fillna(method='ffill')
             
             # Save combined dataset
-            combined.to_csv('datasets/combined_property_sentiment_data.csv', index=False)
+            combined.to_csv('utils/datasets/combined_property_sentiment_data.csv', index=False)
             logger.info("Successfully saved combined dataset")
             
             return combined
