@@ -1,0 +1,48 @@
+# Training and development files
+utils/train_lstm.py
+utils/datasets/
+notebooks/
+tests/
+*.ipynb
+
+# Model files and directories
+models/
+*.pt
+*.pth
+*.h5
+*.pkl
+*.joblib
+
+# Development and documentation
+README.md
+CONTRIBUTING.md
+LICENSE
+docs/
+.git/
+.gitignore
+.env.example
+
+# Cache and temporary files
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+.DS_Store
+
+# Development tools
+.vscode/
+.idea/
+*.log
+
+# Training data and scripts
+utils/social_media_scraper.py
+data/raw/
+data/processed/
+
+# ML/DL packages not needed for deployment
+torch/
+transformers/
+scikit-learn/
+numpy/
+pandas/
+main.py 
