@@ -3,140 +3,175 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Real Estate Market Sentiment Analysis</title>
-    <!-- CSS -->
+    <title>Real Estate Market Analysis Dashboard</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.0.0/css/all.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <!-- JS -->
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/style.css') }}">
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 </head>
 <body>
-    <!-- Sidebar -->
-    <div class="wrapper">
-        <nav id="sidebar">
-            <div class="sidebar-header">
-                <h3>Market Pulse</h3>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">Real Estate Market Analysis</a>
+            <div class="d-flex">
+                <select class="form-select me-2" id="timeRange">
+                    <option value="7">Last 7 days</option>
+                    <option value="30" selected>Last 30 days</option>
+                </select>
+                <button class="btn btn-primary" onclick="refreshData()">Refresh</button>
             </div>
-            <ul class="list-unstyled components">
-                <li class="active">
-                    <a href="#overview" data-bs-toggle="tab">
-                        <i class="fas fa-chart-line"></i> Overview
-                    </a>
-                </li>
-                <li>
-                    <a href="#sentiment" data-bs-toggle="tab">
-                        <i class="fas fa-heart"></i> Sentiment Analysis
-                    </a>
-                </li>
-                <li>
-                    <a href="#sources" data-bs-toggle="tab">
-                        <i class="fas fa-database"></i> Data Sources
-                    </a>
-                </li>
-                <li>
-                    <a href="#trends" data-bs-toggle="tab">
-                        <i class="fas fa-chart-area"></i> Trends
-                    </a>
-                </li>
-            </ul>
-        </nav>
+        </div>
+    </nav>
 
-        <!-- Page Content -->
-        <div id="content">
-            <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-                <div class="container-fluid">
-                    <button type="button" id="sidebarCollapse" class="btn btn-info">
-                        <i class="fas fa-bars"></i>
-                    </button>
-                    <span class="navbar-brand">Real Estate Market Sentiment Analysis</span>
-                    <div class="d-flex">
-                        <select id="timeRange" class="form-select">
-                            <option value="7">Last 7 days</option>
-                            <option value="30" selected>Last 30 days</option>
-                            <option value="90">Last 90 days</option>
-                            <option value="180">Last 180 days</option>
-                            <option value="365">Last year</option>
-                        </select>
+    <div class="container-fluid mt-4">
+        <div class="row justify-content-center">
+            <!-- Main Content Area -->
+            <div class="col-md-9">
+                <!-- Sentiment Analysis -->
+                <div class="card stats-card">
+                    <div class="card-body">
+                        <h5 class="card-title">Summary Statistics</h5>
+                        <div id="summaryStats">Loading...</div>
+                        <div id="sentimentDistributionChart" class="chart-container"></div>
                     </div>
                 </div>
-            </nav>
-
-            <div class="tab-content">
-                <!-- Overview Tab -->
-                <div class="tab-pane fade show active" id="overview">
-                    <div class="container-fluid">
-                        <!-- Summary Cards -->
-                        <div class="row mt-4">
-                            <div class="col-md-3">
-                                <div class="stat-card">
-                                    <div class="stat-card-content">
-                                        <h6>Total Articles</h6>
-                                        <h2 id="totalArticles">-</h2>
-                                    </div>
-                                    <div class="stat-card-icon">
-                                        <i class="fas fa-newspaper"></i>
-                                    </div>
-                                </div>
+                <div class="card prediction-card">
+                    <div class="card-body">
+                        <h5 class="card-title">Sentiment Analysis</h5>
+                        <div class="row">
+                            <div id="sentimentTimelineChart" class="chart-container">
+                                <h6 class="text-muted">Sentiment Timeline</h6>
                             </div>
-                            <div class="col-md-3">
-                                <div class="stat-card">
-                                    <div class="stat-card-content">
-                                        <h6>Overall Sentiment</h6>
-                                        <h2 id="overallSentiment">-</h2>
-                                    </div>
-                                    <div class="stat-card-icon">
-                                        <i class="fas fa-smile"></i>
-                                    </div>
-                                </div>
-                            </div>
-                            <!-- Add more stat cards as needed -->
                         </div>
+                    </div>
+                </div>
 
-                        <!-- Charts -->
-                        <div class="row mt-4">
+                 <!-- Prediction Card -->
+                 <div class="card prediction-card">
+                    <div class="card-body">
+                        <h5 class="card-title">House Price Predictions</h5>
+                        <div class="row">
+                            <div id="housePricePredictionChart" class="chart-container">
+                                <h6 class="text-muted">House Price Predictions</h6>
+                            </div>
+                        </div>
+                        <div class="metrics-container mt-3">
+                            <div class="row">
+                                <div class="col-md-3">
+                                    <div class="metric-item">
+                                        <span class="metric-label">Train Loss:</span>
+                                        <span id="housePriceTrainLoss" class="metric-value">-</span>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="metric-item">
+                                        <span class="metric-label">Eval Loss:</span>
+                                        <span id="housePriceEvalLoss" class="metric-value">-</span>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="metric-item">
+                                        <span class="metric-label">Accuracy:</span>
+                                        <span id="housePriceAccuracy" class="metric-value">-</span>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="metric-item">
+                                        <span class="metric-label">Confidence:</span>
+                                        <span id="predictionConfidence" class="metric-value">-</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card prediction-card">
+                    <div class="card-body">
+                        <h5 class="card-title">Interest Rate Predictions</h5>
+                        <div class="row">
+                            <div id="interestRatePredictionChart" class="chart-container">
+                                <h6 class="text-muted">Interest Rate Predictions</h6>
+                            </div>
+                        </div>
+                        <div class="metrics-container mt-3">
+                            <div class="row">
+                                <div class="col-md-3">
+                                    <div class="metric-item">
+                                        <span class="metric-label">Train Loss:</span>
+                                        <span id="rateTrainLoss" class="metric-value">-</span>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="metric-item">
+                                        <span class="metric-label">Eval Loss:</span>
+                                        <span id="rateEvalLoss" class="metric-value">-</span>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="metric-item">
+                                        <span class="metric-label">Accuracy:</span>
+                                        <span id="rateAccuracy" class="metric-value">-</span>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <div class="metric-item">
+                                        <span class="metric-label">Confidence:</span>
+                                        <span id="ratePredictionConfidence" class="metric-value">-</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Articles -->
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Recent Articles</h5>
+                        <div id="recentArticles" class="table-responsive">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Title</th>
+                                        <th>Sentiment</th>
+                                        <th>Score</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="articlesTableBody">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Market Analysis Report -->
+                <div class="card market-report-card">
+                    <div class="card-body">
+                        <h5 class="card-title">Market Analysis Report</h5>
+                        <div class="row">
                             <div class="col-md-6">
-                                <div class="chart-card">
-                                    <h5>Sentiment Distribution</h5>
-                                    <div id="sentimentPie" class="chart-container"></div>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="chart-card">
-                                    <h5>Sources Distribution</h5>
-                                    <div id="sourceBar" class="chart-container"></div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="row mt-4">
-                            <div class="col-12">
-                                <div class="chart-card">
-                                    <h5>Sentiment Trends</h5>
-                                    <div id="sentimentTimeline" class="chart-container"></div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Time Period Controls -->
-                        <div class="container-fluid">
-                            <div class="row mt-3">
-                                <div class="col-md-6">
-                                    <div class="time-filter-card">
-                                        <h6>Time Period</h6>
-                                        <div class="btn-group" role="group" aria-label="Time period filter">
-                                            <button type="button" class="btn btn-outline-primary" data-period="7">7 Days</button>
-                                            <button type="button" class="btn btn-outline-primary active" data-period="30">30 Days</button>
-                                            <button type="button" class="btn btn-outline-primary" data-period="90">90 Days</button>
-                                            <button type="button" class="btn btn-outline-primary" data-period="180">180 Days</button>
-                                            <button type="button" class="btn btn-outline-primary" data-period="365">1 Year</button>
+                                <div class="market-report-container">
+                                    <div class="report-header">
+                                        <h6>Current Market Condition</h6>
+                                    </div>
+                                    <div id="currentMarketReport" class="report-container">
+                                        <div class="report-content">
+                                            <p class="report-text">Loading current market analysis...</p>
                                         </div>
                                     </div>
                                 </div>
-                                <div class="col-md-6">
-                                    <div class="date-range-display">
-                                        <span id="dateRange"></span>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="market-report-container">
+                                    <div class="report-header">
+                                        <h6>Future Market Outlook</h6>
+                                    </div>
+                                    <div id="futureMarketReport" class="report-container">
+                                        <div class="report-content">
+                                            <p class="report-text">Loading future market analysis...</p>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -144,8 +179,21 @@
                     </div>
                 </div>
 
-                <!-- Other tabs content -->
-                <!-- Add content for other tabs -->
+                <!-- Market Analysis Assistant -->
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Market Analysis Assistant</h5>
+                        <div id="chatContainer" class="chat-container">
+                            <div id="chatMessages" class="chat-messages"></div>
+                            <div class="chat-input-container">
+                                <div class="input-group">
+                                    <input type="text" id="chatInput" class="form-control" placeholder="Ask about the Australian real estate market...">
+                                    <button class="btn btn-primary" onclick="sendMessage()">Send</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

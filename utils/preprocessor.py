@@ -1,6 +1,6 @@
 import re
 import pandas as pd
-from typing import Dict, List, Union, Tuple
+from typing import Dict, List, Union, Tuple, Optional
 from textblob import TextBlob
 from datetime import datetime, timedelta
 from utils.sentiment_analyzer import TransformerSentimentAnalyzer
@@ -137,83 +137,56 @@ class DataPreprocessor:
         
         return filtered_data
 
-    def preprocess_data(self, data: List[Dict], source: str, 
-                       sentiment_filter: List[str] = None) -> List[Dict]:
-        """Preprocess data from a specific source."""
-        try:
-            processed_items = []
-            original_count = len(data)
-            
-            for item in data:
-                try:
-                    # Get the content based on source type
-                    if source == 'reddit':
-                        # Combine title and selftext for Reddit posts
-                        content = f"{item.get('title', '')} {item.get('content', '')}"
-                        if not content.strip():  # Skip if no content
-                            continue
-                    elif source == 'google_news':
-                        content = f"{item.get('title', '')} {item.get('content', '')}"
-                        if not content.strip():  # Skip if no content
-                            continue
-                    else:
-                        content = item.get('content', '')
-                        if not content:  # Skip if no content
-                            continue
-
-                    # Clean the content
-                    cleaned_content = self.clean_text(content)
-                    if not cleaned_content:  # Skip if cleaning results in empty text
+    def preprocess_data(self, data: List[Dict], source: str, sentiment_filter: Optional[List[str]] = None) -> List[Dict]:
+        """Run full preprocessing pipeline on collected data."""
+        processed_data = []
+        
+        for item in data:
+            try:
+                # Get the content based on source type
+                if source == 'reddit':
+                    # Combine title and selftext for Reddit posts
+                    content = f"{item.get('title', '')} {item.get('content', '')}"
+                    if not content.strip():  # Skip if no content
+                        continue
+                elif source == 'google_news':
+                    content = f"{item.get('title', '')} {item.get('content', '')}"
+                    if not content.strip():  # Skip if no content
+                        continue
+                else:
+                    content = item.get('content', '')
+                    if not content:  # Skip if no content
                         continue
 
-                    # Check relevance
-                    if not self.is_relevant(cleaned_content):
-                        continue
-
-                    # Analyze sentiment
-                    sentiment_result = self.analyze_sentiment(cleaned_content)
-                    if not sentiment_result:
-                        continue
-
-                    # Filter by sentiment if specified
-                    if sentiment_filter and sentiment_result['sentiment'] not in sentiment_filter:
-                        continue
-
-                    # Create processed item
-                    processed_item = {
-                        'title': item.get('title', ''),
-                        'content': cleaned_content,
-                        'url': item.get('url', ''),
-                        'source': source,
-                        'sentiment': sentiment_result['sentiment'],
-                        'confidence': sentiment_result['confidence'],
-                        'date_collected': datetime.now().isoformat(),
-                        'date': item.get('date', datetime.now().isoformat())
-                    }
-                    processed_items.append(processed_item)
-
-                except Exception as e:
-                    logger.error(f"Error processing item: {str(e)}")
+                # Clean the content
+                cleaned_content = self.clean_text(content)
+                if not cleaned_content:  # Skip if cleaning results in empty text
                     continue
 
-            # Log processing statistics
-            processed_count = len(processed_items)
-            removed_count = original_count - processed_count
-            removal_rate = removed_count / original_count if original_count > 0 else 0
+                # Check relevance
+                if not self.is_relevant(cleaned_content):
+                    continue
 
-            logger.info(
-                f"Processing stats for {source}: "
-                f"{{'original_count': {original_count}, "
-                f"'processed_count': {processed_count}, "
-                f"'removed_count': {removed_count}, "
-                f"'removal_rate': {removal_rate}}}"
-            )
-
-            return processed_items
-
-        except Exception as e:
-            logger.error(f"Error processing {source} data: {str(e)}")
-            return []
+                # Get sentiment analysis
+                sentiment_results = self.sentiment_analyzer.analyze_text(cleaned_content)
+                if sentiment_results:
+                    print(f"\nSentiment Analysis Results:")
+                    print(f"Content: {cleaned_content[:100]}...")
+                    print(f"Sentiment Score: {sentiment_results.get('sentiment_score')}")
+                    
+                    item.update({
+                        'cleaned_content': cleaned_content,
+                        'sentiment': sentiment_results['sentiment'],
+                        'confidence': sentiment_results['confidence'],
+                        'sentiment_score': sentiment_results['sentiment_score']
+                    })
+                    processed_data.append(item)
+                    
+            except Exception as e:
+                logger.error(f"Error preprocessing item: {str(e)}")
+                continue
+        
+        return processed_data
 
     def get_preprocessing_stats(self, original_data: List[Dict], 
                               processed_data: List[Dict]) -> Dict:
