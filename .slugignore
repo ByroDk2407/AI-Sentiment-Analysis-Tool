@@ -45,4 +45,15 @@ transformers/
 scikit-learn/
 numpy/
 pandas/
-main.py 
+main.py
+
+# Web scraping and data collection packages
+beautifulsoup4/
+tweepy/
+praw/
+googlenews/
+newsapi-python/
+selenium/
+langdetect/
+chromedriver
+geckodriver 
